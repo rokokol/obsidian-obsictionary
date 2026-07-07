@@ -88,15 +88,7 @@ export class DictionaryEditorView extends ItemView {
       }
     }
     await super.setState(state, result);
-    this.refreshHeader();
     await this.renderView();
-  }
-
-  /** Ask the leaf to re-read getDisplayText/getIcon so the header title (which
-   *  is drawn once at creation, before the file is set) shows the file name. */
-  private refreshHeader(): void {
-    const leaf = this.leaf as WorkspaceLeaf & { updateHeader?: () => void };
-    leaf.updateHeader?.();
   }
 
   override onOpen(): Promise<void> {
@@ -123,6 +115,7 @@ export class DictionaryEditorView extends ItemView {
       root.createDiv({ cls: "obsictionary-view-empty", text: "No dictionary file." });
       return;
     }
+    this.syncHeaderTitle(file);
     const doc = await readDictionary(this.app, file);
     if (!doc) {
       root.createDiv({
@@ -156,6 +149,70 @@ export class DictionaryEditorView extends ItemView {
     entries.sort((a, b) => key(a).localeCompare(key(b)));
     if (this.sortMode === "front-desc") entries.reverse();
     return entries;
+  }
+
+  /**
+   * The leaf draws its `.view-header-title` once at creation, before the file
+   * is set, so it keeps the getDisplayText fallback ("Dictionary"). Own that
+   * element: show the file name and make it click-to-rename like markdown mode.
+   */
+  private syncHeaderTitle(file: TFile): void {
+    const titleEl = this.containerEl.querySelector<HTMLElement>(".view-header-title");
+    if (!titleEl) return;
+    if (!titleEl.hasClass("obsictionary-header-title")) {
+      titleEl.addClass("obsictionary-header-title");
+      titleEl.addEventListener("click", () => {
+        this.beginHeaderRename(titleEl);
+      });
+    }
+    // Don't clobber the text mid-edit.
+    if (titleEl.getAttribute("contenteditable") !== "true") titleEl.setText(file.basename);
+  }
+
+  private beginHeaderRename(el: HTMLElement): void {
+    const file = this.file;
+    if (!file || el.getAttribute("contenteditable") === "true") return;
+    el.setAttribute("contenteditable", "true");
+    el.setText(file.basename);
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    let committed = false;
+    const finish = (save: boolean): void => {
+      if (committed) return;
+      committed = true;
+      el.removeAttribute("contenteditable");
+      const next = el.textContent.trim();
+      if (save && next !== "" && next !== file.basename) void this.rename(file, next);
+      else el.setText(file.basename);
+    };
+    el.addEventListener("blur", () => {
+      finish(true);
+    });
+    el.addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        finish(true);
+      } else if (evt.key === "Escape") {
+        evt.preventDefault();
+        finish(false);
+      }
+    });
+  }
+
+  private async rename(file: TFile, basename: string): Promise<void> {
+    const dir = file.parent && file.parent.path !== "/" ? `${file.parent.path}/` : "";
+    const newPath = `${dir}${basename}.${file.extension}`;
+    try {
+      await this.app.fileManager.renameFile(file, newPath);
+    } catch (err) {
+      new Notice(`Rename failed: ${err instanceof Error ? err.message : String(err)}`);
+      void this.renderView();
+    }
   }
 
   private renderToolbar(root: HTMLElement, file: TFile, doc: DictionaryDoc): void {
