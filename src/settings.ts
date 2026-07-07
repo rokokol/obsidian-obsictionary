@@ -45,6 +45,20 @@ export function frontColumnFor(preset: string | null, headers: string[]): string
   return headers.find((h) => h !== SRS_COLUMN && h !== DUE_COLUMN) ?? headers[0] ?? "";
 }
 
+/** How a dictionary note opens by default. */
+export type DefaultView = "dictionary" | "markdown";
+
+/** Ordering of words in the interactive view. */
+export type SortMode = "manual" | "front-asc" | "front-desc" | "due-asc";
+
+/** Human labels for each sort mode, in menu order. */
+export const SORT_LABELS: Record<SortMode, string> = {
+  manual: "Manual (file order)",
+  "front-asc": "Word A→Z",
+  "front-desc": "Word Z→A",
+  "due-asc": "Due first",
+};
+
 export interface ObsictionarySettings {
   /** Preset applied to newly created dictionaries. */
   defaultPreset: PresetId;
@@ -52,10 +66,16 @@ export interface ObsictionarySettings {
   fsrsRetention: number;
   /** Whether review pulls due cards from all dictionaries or just the active note. */
   reviewScope: "note" | "vault";
+  /** Whether dictionary notes auto-open in the interactive view or as markdown. */
+  defaultView: DefaultView;
+  /** Default word ordering in the interactive view. */
+  defaultSort: SortMode;
 }
 
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
   defaultPreset: "word-transcription-translation",
   fsrsRetention: 0.9,
   reviewScope: "note",
+  defaultView: "dictionary",
+  defaultSort: "manual",
 };

@@ -132,6 +132,24 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file, _source, leaf) => {
+        if (!(file instanceof TFile) || !isDictionaryFile(this.app, file)) return;
+        const inDictionaryView = leaf?.view instanceof DictionaryEditorView;
+        menu.addItem((item) => {
+          item
+            .setTitle(inDictionaryView ? "Open as markdown" : "Open as dictionary")
+            .setIcon("book-a")
+            .onClick(() => {
+              const target = leaf ?? this.app.workspace.getMostRecentLeaf();
+              if (!target) return;
+              if (inDictionaryView) void this.openAsMarkdown(file, target);
+              else void this.openAsDictionary(file, target);
+            });
+        });
+      }),
+    );
+
+    this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
         this.cache.update(file);
       }),
@@ -189,6 +207,7 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   private maybeSwap(leaf: WorkspaceLeaf | null): void {
+    if (this.settings.defaultView !== "dictionary") return;
     if (!leaf) return;
     const view = leaf.view;
     if (!(view instanceof MarkdownView)) return;
