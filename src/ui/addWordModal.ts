@@ -1,14 +1,17 @@
 import { Modal, Setting, type App } from "obsidian";
+import { missingColumns, sanitizeCell } from "../model/word";
 
 /**
- * Prompt for the fields of a new word. Resolves the entered values keyed by
- * column name, or null if cancelled.
+ * Prompt for the fields of a new word. Every field is required: submitting with
+ * a blank field shows an inline error instead of adding an incomplete word. On
+ * success the sanitized values are handed to `onSubmit`; cancelling yields none.
  */
 export class AddWordModal extends Modal {
   private readonly columns: string[];
-  private readonly values: Record<string, string> = {};
+  private readonly draft: Record<string, string> = {};
   private readonly onSubmit: (values: Record<string, string>) => void;
-  private submitted = false;
+  private errorEl: HTMLElement | null = null;
+  private result: Record<string, string> | null = null;
 
   constructor(app: App, columns: string[], onSubmit: (values: Record<string, string>) => void) {
     super(app);
@@ -21,10 +24,11 @@ export class AddWordModal extends Modal {
     contentEl.createEl("h3", { text: "Add word" });
 
     for (const column of this.columns) {
-      this.values[column] = "";
+      this.draft[column] = "";
       new Setting(contentEl).setName(column).addText((text) => {
         text.onChange((value) => {
-          this.values[column] = value;
+          this.draft[column] = value;
+          this.errorEl?.hide();
         });
         if (column === this.columns[0]) {
           window.setTimeout(() => {
@@ -37,6 +41,9 @@ export class AddWordModal extends Modal {
       });
     }
 
+    this.errorEl = contentEl.createDiv({ cls: "obsictionary-modal-error" });
+    this.errorEl.hide();
+
     new Setting(contentEl).addButton((btn) => {
       btn
         .setButtonText("Add")
@@ -48,12 +55,25 @@ export class AddWordModal extends Modal {
   }
 
   private submit(): void {
-    this.submitted = true;
+    const values: Record<string, string> = {};
+    for (const column of this.columns) values[column] = sanitizeCell(this.draft[column] ?? "");
+    const missing = missingColumns(values, this.columns);
+    if (missing.length > 0) {
+      this.showError(`Fill in every field — ${missing.join(", ")} left empty.`);
+      return;
+    }
+    this.result = values;
     this.close();
+  }
+
+  private showError(message: string): void {
+    if (!this.errorEl) return;
+    this.errorEl.setText(message);
+    this.errorEl.show();
   }
 
   override onClose(): void {
     this.contentEl.empty();
-    if (this.submitted) this.onSubmit(this.values);
+    if (this.result) this.onSubmit(this.result);
   }
 }

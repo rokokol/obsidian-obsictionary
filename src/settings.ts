@@ -1,4 +1,4 @@
-import { DUE_COLUMN, PLUGIN_KEYS, SRS_COLUMN, STANDARD_KEYS } from "./model/dictionary";
+import { DUE_COLUMN, isManagedColumn, PLUGIN_KEYS, SRS_COLUMN, STANDARD_KEYS } from "./model/dictionary";
 import { NAV_KEYS } from "./render/blocks";
 
 /** Built-in preset identifiers. Users may reference custom presets by name too. */
@@ -43,7 +43,7 @@ export function frontColumnFor(preset: string | null, headers: string[]): string
   if (preset !== null && preset in BUILTIN_PRESETS) {
     return BUILTIN_PRESETS[preset as PresetId].front;
   }
-  return headers.find((h) => h !== SRS_COLUMN && h !== DUE_COLUMN) ?? headers[0] ?? "";
+  return headers.find((h) => !isManagedColumn(h)) ?? headers[0] ?? "";
 }
 
 /** How a dictionary note opens by default. */

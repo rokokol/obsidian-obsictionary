@@ -1,12 +1,16 @@
 import { MarkdownView, Notice, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
-import { appendWord, appendWords, createDictionaryNote } from "./commands/dictionaryCommands";
-import { DUE_COLUMN, SRS_COLUMN } from "./model/dictionary";
+import {
+  appendWord,
+  appendWords,
+  contentColumnsOf,
+  createDictionaryNote,
+} from "./commands/dictionaryCommands";
 import { DictionaryCache } from "./obsidian/cache";
 import { isDictionaryFile, readDictionary } from "./obsidian/dictionaryFile";
 import { renderDictionary } from "./render/dictionaryView";
 import { renderStats } from "./render/statsView";
 import { gatherDue } from "./review/collect";
-import { contentColumnsFor, DEFAULT_SETTINGS, type ObsictionarySettings } from "./settings";
+import { DEFAULT_SETTINGS, type ObsictionarySettings } from "./settings";
 import { AddWordModal } from "./ui/addWordModal";
 import { ImportWordsModal } from "./ui/importWordsModal";
 import { ReviewModal } from "./ui/reviewModal";
@@ -178,10 +182,7 @@ export default class ObsictionaryPlugin extends Plugin {
   private async promptAddWord(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
     if (!doc) return;
-    const columns = doc.table
-      ? doc.table.headers.filter((h) => h !== DUE_COLUMN && h !== SRS_COLUMN)
-      : contentColumnsFor(doc.frontmatter.preset);
-    new AddWordModal(this.app, columns, (values) => {
+    new AddWordModal(this.app, contentColumnsOf(doc), (values) => {
       void appendWord(this.app, file, values);
     }).open();
   }
@@ -189,10 +190,7 @@ export default class ObsictionaryPlugin extends Plugin {
   private async promptImportWords(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
     if (!doc) return;
-    const columns = doc.table
-      ? doc.table.headers.filter((h) => h !== DUE_COLUMN && h !== SRS_COLUMN)
-      : contentColumnsFor(doc.frontmatter.preset);
-    new ImportWordsModal(this.app, columns, (rows) => {
+    new ImportWordsModal(this.app, contentColumnsOf(doc), (rows) => {
       void appendWords(this.app, file, rows);
     }).open();
   }
