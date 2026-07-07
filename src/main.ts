@@ -30,11 +30,13 @@ export default class ObsictionaryPlugin extends Plugin {
       this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
         this.maybeSwap(leaf);
       });
+      this.updateChrome();
     });
 
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         this.maybeSwap(leaf);
+        this.updateChrome();
       }),
     );
     this.registerEvent(
@@ -206,6 +208,16 @@ export default class ObsictionaryPlugin extends Plugin {
     }
   }
 
+  /**
+   * Toggle a body class while a dictionary view is active. The custom view has
+   * no markdown editor, so Obsidian's status-bar items hide themselves and some
+   * themes paint the empty bar as a stray floating pill — CSS hides it.
+   */
+  private updateChrome(): void {
+    const active = this.app.workspace.getActiveViewOfType(DictionaryEditorView);
+    document.body.toggleClass("obsictionary-active", active !== null);
+  }
+
   private maybeSwap(leaf: WorkspaceLeaf | null): void {
     if (this.settings.defaultView !== "dictionary") return;
     if (!leaf) return;
@@ -256,6 +268,10 @@ export default class ObsictionaryPlugin extends Plugin {
       return;
     }
     new ReviewModal(this.app, items, this.settings.fsrsRetention).open();
+  }
+
+  override onunload(): void {
+    document.body.removeClass("obsictionary-active");
   }
 
   async loadSettings(): Promise<void> {
