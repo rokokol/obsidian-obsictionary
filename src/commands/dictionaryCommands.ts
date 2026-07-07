@@ -1,7 +1,12 @@
 import { Notice, normalizePath, type App, type TFile } from "obsidian";
 import { contentColumns, DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import { serializeTable, type MarkdownTable } from "../model/table";
-import { readDictionary, updateWordsTable, type DictionaryDoc } from "../obsidian/dictionaryFile";
+import {
+  DICTIONARY_TAG,
+  readDictionary,
+  updateWordsTable,
+  type DictionaryDoc,
+} from "../obsidian/dictionaryFile";
 import { contentColumnsFor, type PresetId } from "../settings";
 
 /** Content columns to prompt for when adding words to `doc` (falls back to preset). */
@@ -74,9 +79,9 @@ export async function createDictionaryNote(app: App, preset: PresetId): Promise<
   const table: MarkdownTable = { headers, rows: [] };
   const content = [
     "---",
-    "obsictionary: dictionary",
+    "tags:",
+    `  - ${DICTIONARY_TAG}`,
     `preset: ${preset}`,
-    "lang:",
     "---",
     "## Words",
     "",

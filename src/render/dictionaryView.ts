@@ -3,9 +3,10 @@ import { isManagedColumn, SRS_COLUMN } from "../model/dictionary";
 import {
   DICTIONARY_FLAG,
   DICTIONARY_FLAG_VALUE,
+  DICTIONARY_TAG,
 } from "../obsidian/dictionaryFile";
-import { frontColumnFor, isSystemProperty, selectProperties } from "../settings";
-import { renderNav, renderPropertiesTable, renderRelatedLinks } from "./blocks";
+import { frontColumnFor } from "../settings";
+import { renderDictionaryMeta } from "./meta";
 
 function getFrontmatter(ctx: MarkdownPostProcessorContext): Record<string, unknown> | null {
   const fm: unknown = ctx.frontmatter;
@@ -13,8 +14,12 @@ function getFrontmatter(ctx: MarkdownPostProcessorContext): Record<string, unkno
   return fm as Record<string, unknown>;
 }
 
+/** Reading mode sees only frontmatter, so detect via the tag list or the flag. */
 function isDictionaryFrontmatter(fm: Record<string, unknown>): boolean {
-  return fm[DICTIONARY_FLAG] === DICTIONARY_FLAG_VALUE;
+  if (fm[DICTIONARY_FLAG] === DICTIONARY_FLAG_VALUE) return true;
+  const tags = fm["tags"];
+  const list = Array.isArray(tags) ? tags : typeof tags === "string" ? [tags] : [];
+  return list.some((t) => typeof t === "string" && t.replace(/^#/, "") === DICTIONARY_TAG);
 }
 
 /** Determine the "front" column for a note from its preset, else first column. */
@@ -30,26 +35,6 @@ function isWordsTable(headers: string[], front: string): boolean {
 
 function readHeaders(table: HTMLTableElement): string[] {
   return Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent.trim());
-}
-
-function renderProperties(
-  container: HTMLElement,
-  fm: Record<string, unknown>,
-  allow: string[],
-): void {
-  const entries = Object.entries(fm).filter(([key]) => !isSystemProperty(key));
-  renderPropertiesTable(container, selectProperties(entries, allow));
-}
-
-function renderRelated(
-  container: HTMLElement,
-  fm: Record<string, unknown>,
-  sourcePath: string,
-): void {
-  const raw = fm["related"];
-  const items = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
-  const rawLinks = items.filter((v): v is string => typeof v === "string");
-  renderRelatedLinks(container, rawLinks, sourcePath);
 }
 
 /**
@@ -130,9 +115,7 @@ export function renderDictionary(
     }
 
     const header = container.createDiv({ cls: "obsictionary-meta" });
-    renderNav(header, fm, ctx.sourcePath);
-    renderProperties(header, fm, allowProperties);
-    renderRelated(header, fm, ctx.sourcePath);
+    renderDictionaryMeta(header, fm, ctx.sourcePath, allowProperties);
     if (!header.hasChildNodes()) header.remove();
     container.appendChild(renderCards(table, headers, front));
     table.replaceWith(container);

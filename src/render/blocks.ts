@@ -1,9 +1,4 @@
-/** Shared renderers for the properties table, related links, and graph nav. */
-
-/** Graph-edge frontmatter keys rendered as navigation links. */
-export const GRAPH_KEYS = ["up", "prev", "next", "left"] as const;
-/** Keys rendered by renderNav (excluded from the generic properties table). */
-export const NAV_KEYS = new Set<string>([...GRAPH_KEYS, "source"]);
+/** Shared wikilink helpers and the link-aware properties table. */
 
 export function stringifyValue(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -64,10 +59,15 @@ function appendValue(container: HTMLElement, value: unknown, sourcePath: string)
   });
 }
 
-/** Compact "properties" table from arbitrary frontmatter entries. */
+/**
+ * Compact "properties" table from arbitrary frontmatter entries. Values that are
+ * wikilinks or URLs render as clickable links (so `up`, `source`, `related` and
+ * plain fields all live in one place).
+ */
 export function renderPropertiesTable(
   container: HTMLElement,
   entries: [string, unknown][],
+  sourcePath: string,
 ): void {
   if (entries.length === 0) return;
   const table = container.createEl("table", { cls: "obsictionary-props" });
@@ -75,44 +75,6 @@ export function renderPropertiesTable(
   for (const [key, value] of entries) {
     const row = body.createEl("tr");
     row.createEl("th", { text: key });
-    row.createEl("td", { text: stringifyValue(value) });
+    appendValue(row.createEl("td"), value, sourcePath);
   }
-}
-
-/** Related links block from raw wikilink strings ("[[Target|Alias]]"). */
-export function renderRelatedLinks(
-  container: HTMLElement,
-  rawLinks: string[],
-  sourcePath: string,
-): void {
-  const links = rawLinks
-    .map(parseWikilink)
-    .filter((v): v is ParsedWikilink => v !== null);
-  if (links.length === 0) return;
-  const wrap = container.createDiv({ cls: "obsictionary-related" });
-  wrap.createSpan({ cls: "obsictionary-related-label", text: "Related:" });
-  for (const link of links) appendInternalLink(wrap, link, sourcePath);
-}
-
-/**
- * Render graph-nav frontmatter (up/prev/next/left) and source as links, when
- * present. Returns true if anything was rendered.
- */
-export function renderNav(
-  container: HTMLElement,
-  props: Record<string, unknown>,
-  sourcePath: string,
-): boolean {
-  const nav = container.createDiv({ cls: "obsictionary-nav" });
-  let rendered = false;
-  for (const key of [...GRAPH_KEYS, "source"]) {
-    const value = props[key];
-    if (value === undefined || value === null || stringifyValue(value).trim() === "") continue;
-    rendered = true;
-    const item = nav.createDiv({ cls: "obsictionary-nav-item" });
-    item.createSpan({ cls: "obsictionary-nav-label", text: key });
-    appendValue(item, value, sourcePath);
-  }
-  if (!rendered) nav.remove();
-  return rendered;
 }

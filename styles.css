@@ -31,20 +31,8 @@
 
 .obsictionary-props th {
   font-weight: var(--font-medium);
-  color: var(--text-normal);
+  color: var(--text-faint);
   white-space: nowrap;
-}
-
-.obsictionary-related {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--size-4-2);
-  font-size: var(--font-ui-small);
-}
-
-.obsictionary-related-label {
-  color: var(--text-muted);
 }
 
 /* Word cards */
@@ -329,28 +317,6 @@ body.obsictionary-hide-status .status-bar {
   width: 100%;
   font: inherit;
   color: inherit;
-}
-
-/* Graph nav (up/prev/next/source) */
-.obsictionary-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2) var(--size-4-4);
-  font-size: var(--font-ui-small);
-  width: 100%;
-}
-
-.obsictionary-nav-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--size-4-1);
-}
-
-.obsictionary-nav-label {
-  color: var(--text-faint);
-  text-transform: uppercase;
-  font-size: var(--font-ui-smaller);
-  letter-spacing: 0.04em;
 }
 
 /* Theory block (editable) */

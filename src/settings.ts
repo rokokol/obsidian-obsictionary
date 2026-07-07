@@ -1,5 +1,4 @@
-import { DUE_COLUMN, isManagedColumn, PLUGIN_KEYS, SRS_COLUMN, STANDARD_KEYS } from "./model/dictionary";
-import { NAV_KEYS } from "./render/blocks";
+import { DUE_COLUMN, isManagedColumn, PLUGIN_KEYS, SRS_COLUMN } from "./model/dictionary";
 
 /** Built-in preset identifiers. Users may reference custom presets by name too. */
 export type PresetId = "word-meaning" | "word-transcription-translation";
@@ -78,39 +77,41 @@ export interface ObsictionarySettings {
   properties: string[];
 }
 
+/** Header keys shown by default: graph edges, source and related links. */
+const DEFAULT_DISPLAYED_PROPERTIES = ["up", "prev", "next", "left", "source", "related"];
+
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
   defaultPreset: "word-transcription-translation",
   fsrsRetention: 0.9,
   reviewScope: "note",
   defaultView: "dictionary",
   defaultSort: "manual",
-  properties: [],
+  properties: [...DEFAULT_DISPLAYED_PROPERTIES],
 };
 
 /**
- * Keys owned by the plugin or the vault that must never be shown as user
- * "properties" — the properties setting rejects these.
+ * Keys the plugin owns and manages — never shown as user "properties" and
+ * rejected by the Displayed-properties setting. Everything else (graph edges,
+ * related, tags, arbitrary fields) is user-manageable.
  */
-export const SYSTEM_PROPERTY_KEYS: ReadonlySet<string> = new Set<string>([
+export const FORBIDDEN_PROPERTY_KEYS: ReadonlySet<string> = new Set<string>([
   ...PLUGIN_KEYS,
-  ...STANDARD_KEYS,
-  ...NAV_KEYS,
   SRS_COLUMN,
   DUE_COLUMN,
   "position",
 ]);
 
-export function isSystemProperty(key: string): boolean {
-  return SYSTEM_PROPERTY_KEYS.has(key);
+export function isForbiddenProperty(key: string): boolean {
+  return FORBIDDEN_PROPERTY_KEYS.has(key);
 }
 
-/** Parse a user-typed list (commas/newlines) into clean, non-system keys. */
+/** Parse a user-typed list (commas/newlines) into clean, non-forbidden keys. */
 export function sanitizePropertyKeys(input: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of input.split(/[\n,]/)) {
     const key = raw.trim();
-    if (key === "" || isSystemProperty(key) || seen.has(key)) continue;
+    if (key === "" || isForbiddenProperty(key) || seen.has(key)) continue;
     seen.add(key);
     out.push(key);
   }
