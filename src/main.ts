@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
 import { appendWord, createDictionaryNote } from "./commands/dictionaryCommands";
 import { DUE_COLUMN, SRS_COLUMN } from "./model/dictionary";
 import { DictionaryCache } from "./obsidian/cache";
@@ -10,17 +10,47 @@ import { contentColumnsFor, DEFAULT_SETTINGS, type ObsictionarySettings } from "
 import { AddWordModal } from "./ui/addWordModal";
 import { ReviewModal } from "./ui/reviewModal";
 import { ObsictionarySettingTab } from "./ui/settingsTab";
+import { DICTIONARY_VIEW_TYPE, DictionaryEditorView } from "./view/dictionaryEditorView";
 
 export default class ObsictionaryPlugin extends Plugin {
   override settings: ObsictionarySettings = DEFAULT_SETTINGS;
   readonly cache = new DictionaryCache(this.app);
+  /** Paths the user explicitly asked to keep open as markdown (skip auto-swap). */
+  private readonly forceMarkdown = new Set<string>();
 
   override async onload(): Promise<void> {
     await this.loadSettings();
     this.addSettingTab(new ObsictionarySettingTab(this.app, this));
 
+    this.registerView(DICTIONARY_VIEW_TYPE, (leaf) => new DictionaryEditorView(leaf, this));
+
     this.app.workspace.onLayoutReady(() => {
       this.cache.rebuild();
+      this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
+        this.maybeSwap(leaf);
+      });
+    });
+
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        this.maybeSwap(leaf);
+      }),
+    );
+    this.registerEvent(
+      this.app.workspace.on("file-open", () => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view) this.maybeSwap(view.leaf);
+      }),
+    );
+
+    this.addRibbonIcon("book-a", "Open as dictionary", () => {
+      const file = this.app.workspace.getActiveFile();
+      const leaf = this.app.workspace.getMostRecentLeaf();
+      if (file && leaf && isDictionaryFile(this.app, file)) {
+        void this.openAsDictionary(file, leaf);
+      } else {
+        new Notice("Active note is not an Obsictionary dictionary.");
+      }
     });
 
     this.registerMarkdownPostProcessor((el, ctx) => {
@@ -62,6 +92,30 @@ export default class ObsictionaryPlugin extends Plugin {
       name: "Review due cards",
       callback: () => {
         void this.startReview();
+      },
+    });
+
+    this.addCommand({
+      id: "open-as-dictionary",
+      name: "Open as dictionary",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        const file = view?.file ?? null;
+        if (!view || !file || !isDictionaryFile(this.app, file)) return false;
+        if (!checking) void this.openAsDictionary(file, view.leaf);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "open-as-markdown",
+      name: "Open dictionary as markdown",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(DictionaryEditorView);
+        const file = view?.getFile() ?? null;
+        if (!view || !file) return false;
+        if (!checking) void this.openAsMarkdown(file, view.leaf);
+        return true;
       },
     });
 
@@ -109,6 +163,38 @@ export default class ObsictionaryPlugin extends Plugin {
     } else {
       await this.reviewFiles(this.cache.files());
     }
+  }
+
+  private maybeSwap(leaf: WorkspaceLeaf | null): void {
+    if (!leaf) return;
+    const view = leaf.view;
+    if (!(view instanceof MarkdownView)) return;
+    const file = view.file;
+    if (!file || this.forceMarkdown.has(file.path)) return;
+    if (!isDictionaryFile(this.app, file)) return;
+    void leaf.setViewState({
+      type: DICTIONARY_VIEW_TYPE,
+      state: { file: file.path },
+      active: true,
+    });
+  }
+
+  async openAsMarkdown(file: TFile, leaf: WorkspaceLeaf): Promise<void> {
+    this.forceMarkdown.add(file.path);
+    await leaf.setViewState({
+      type: "markdown",
+      state: { file: file.path, mode: "source" },
+      active: true,
+    });
+  }
+
+  async openAsDictionary(file: TFile, leaf: WorkspaceLeaf): Promise<void> {
+    this.forceMarkdown.delete(file.path);
+    await leaf.setViewState({
+      type: DICTIONARY_VIEW_TYPE,
+      state: { file: file.path },
+      active: true,
+    });
   }
 
   private filesFromPath(path: string): TFile[] {

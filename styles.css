@@ -228,3 +228,89 @@
   color: var(--text-faint);
   font-size: var(--font-ui-small);
 }
+
+/* Interactive dictionary view */
+.obsictionary-view {
+  padding: var(--size-4-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-4);
+  overflow-y: auto;
+}
+
+.obsictionary-view-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.obsictionary-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  cursor: pointer;
+}
+
+.obsictionary-tool-icon {
+  display: inline-flex;
+}
+
+.obsictionary-tool-icon svg {
+  width: var(--icon-s);
+  height: var(--icon-s);
+}
+
+.obsictionary-view-empty {
+  color: var(--text-faint);
+  text-align: center;
+  padding: var(--size-4-6) 0;
+}
+
+.obsictionary-card-editable {
+  position: relative;
+}
+
+.obsictionary-card-delete {
+  position: absolute;
+  top: var(--size-4-1);
+  right: var(--size-4-1);
+  padding: 2px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease-in-out;
+}
+
+.obsictionary-card-editable:hover .obsictionary-card-delete {
+  opacity: 1;
+}
+
+.obsictionary-card-delete:hover {
+  color: var(--text-error);
+}
+
+.obsictionary-card-delete svg {
+  width: var(--icon-s);
+  height: var(--icon-s);
+}
+
+.obsictionary-editable {
+  cursor: text;
+  border-radius: var(--radius-s);
+}
+
+.obsictionary-editable:hover {
+  background: var(--background-modifier-hover);
+}
+
+.obsictionary-editable.is-empty {
+  color: var(--text-faint);
+}
+
+.obsictionary-edit-input {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+}

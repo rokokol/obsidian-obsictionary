@@ -3,10 +3,13 @@
 Turn plain Obsidian notes into spaced-repetition **dictionaries**.
 
 A dictionary is just a markdown note: free-form theory on top, a `## Words` table
-below. Obsictionary renders it as a styled dictionary by default, lets you review
-words as flashcards (scheduled with [FSRS](https://github.com/open-spaced-repetition/ts-fsrs)),
-tracks per-word statistics, supports custom fields via extra columns, and shows
-audio/image attachments referenced with `![[name]]`.
+below. Dictionaries open in an **interactive view** (Excalidraw-style) with an
+auto stats panel and tools to add/edit/delete words — the `srs`/`due` bookkeeping
+columns stay hidden; "Open as markdown" shows the source. They also render as a
+styled dictionary in normal reading mode. Words are reviewed as flashcards
+(scheduled with [FSRS](https://github.com/open-spaced-repetition/ts-fsrs)), with
+per-word statistics, custom fields via extra columns, and audio/image attachments
+referenced with `![[name]]`.
 
 > Status: early development.
 
