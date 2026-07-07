@@ -229,10 +229,10 @@
   font-size: var(--font-ui-small);
 }
 
-/* While a dictionary view is active there is no editor, so Obsidian's status
-   bar is empty; some themes render the empty bar as a stray floating pill.
-   Hide it — the class is toggled on <body> from the plugin. */
-body.obsictionary-active .status-bar {
+/* Hide Obsidian's status bar only while it is empty and a dictionary view is
+   active — some themes paint the empty bar as a stray floating pill. The class
+   is toggled on <body> from the plugin (which checks emptiness in JS). */
+body.obsictionary-hide-status .status-bar {
   display: none;
 }
 

@@ -18,6 +18,8 @@ export default class ObsictionaryPlugin extends Plugin {
   readonly cache = new DictionaryCache(this.app);
   /** Paths the user explicitly asked to keep open as markdown (skip auto-swap). */
   private readonly forceMarkdown = new Set<string>();
+  /** Watches the status bar so we can hide it only while it's empty. */
+  private statusBarObserver: MutationObserver | null = null;
 
   override async onload(): Promise<void> {
     await this.loadSettings();
@@ -209,13 +211,36 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   /**
-   * Toggle a body class while a dictionary view is active. The custom view has
-   * no markdown editor, so Obsidian's status-bar items hide themselves and some
-   * themes paint the empty bar as a stray floating pill — CSS hides it.
+   * Hide Obsidian's status bar only while a dictionary view is active AND the
+   * bar has no visible items. The custom view has no markdown editor, so core
+   * status-bar items hide themselves and some themes paint the empty bar as a
+   * stray floating pill. If another plugin still shows a status item, we leave
+   * the bar alone. Re-run on layout/leaf changes and on status-bar mutations.
    */
   private updateChrome(): void {
-    const active = this.app.workspace.getActiveViewOfType(DictionaryEditorView);
-    document.body.toggleClass("obsictionary-active", active !== null);
+    const active = this.app.workspace.getActiveViewOfType(DictionaryEditorView) !== null;
+    const bar = document.body.querySelector<HTMLElement>(".status-bar");
+    if (bar && this.statusBarObserver === null) {
+      const observer = new MutationObserver(() => {
+        this.updateChrome();
+      });
+      observer.observe(bar, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["style", "class"],
+      });
+      this.statusBarObserver = observer;
+    }
+    const empty = bar !== null && ObsictionaryPlugin.isStatusBarEmpty(bar);
+    document.body.toggleClass("obsictionary-hide-status", active && empty);
+  }
+
+  /** True when every status-bar item is hidden (computed display none). */
+  private static isStatusBarEmpty(bar: HTMLElement): boolean {
+    return Array.from(bar.children).every(
+      (el) => getComputedStyle(el).display === "none",
+    );
   }
 
   private maybeSwap(leaf: WorkspaceLeaf | null): void {
@@ -271,7 +296,9 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   override onunload(): void {
-    document.body.removeClass("obsictionary-active");
+    this.statusBarObserver?.disconnect();
+    this.statusBarObserver = null;
+    document.body.removeClass("obsictionary-hide-status");
   }
 
   async loadSettings(): Promise<void> {
