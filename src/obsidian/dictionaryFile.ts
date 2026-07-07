@@ -2,6 +2,7 @@ import { getFrontMatterInfo, type App, type TFile } from "obsidian";
 import {
   locateWords,
   PLUGIN_KEYS,
+  replaceTheory,
   replaceWordsTable,
   STANDARD_KEYS,
 } from "../model/dictionary";
@@ -94,5 +95,15 @@ export async function updateWordsTable(
     if (!loc.table) return data;
     mutate(loc.table);
     return pre + replaceWordsTable(body, loc.table);
+  });
+}
+
+/** Atomically replace the theory (pre-`## Words` text), keeping the rest intact. */
+export async function updateTheory(app: App, file: TFile, theory: string): Promise<void> {
+  await app.vault.process(file, (data) => {
+    const info = getFrontMatterInfo(data);
+    const pre = data.slice(0, info.contentStart);
+    const body = data.slice(info.contentStart);
+    return pre + replaceTheory(body, theory);
   });
 }

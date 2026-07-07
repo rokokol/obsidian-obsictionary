@@ -5,7 +5,7 @@ import {
   DICTIONARY_FLAG_VALUE,
 } from "../obsidian/dictionaryFile";
 import { frontColumnFor } from "../settings";
-import { renderPropertiesTable, renderRelatedLinks } from "./blocks";
+import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "./blocks";
 
 /** Columns never shown as visible dictionary fields. */
 const HIDDEN_COLUMNS = new Set([SRS_COLUMN, DUE_COLUMN]);
@@ -37,7 +37,11 @@ function readHeaders(table: HTMLTableElement): string[] {
 
 function renderProperties(container: HTMLElement, fm: Record<string, unknown>): void {
   const entries = Object.entries(fm).filter(
-    ([key]) => !PLUGIN_KEYS.has(key) && !STANDARD_KEYS.has(key) && key !== "position",
+    ([key]) =>
+      !PLUGIN_KEYS.has(key) &&
+      !STANDARD_KEYS.has(key) &&
+      !NAV_KEYS.has(key) &&
+      key !== "position",
   );
   renderPropertiesTable(container, entries);
 }
@@ -130,6 +134,7 @@ export function renderDictionary(
     }
 
     const header = container.createDiv({ cls: "obsictionary-meta" });
+    renderNav(header, fm, ctx.sourcePath);
     renderProperties(header, fm);
     renderRelated(header, fm, ctx.sourcePath);
     if (!header.hasChildNodes()) header.remove();
