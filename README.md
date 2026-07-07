@@ -10,8 +10,9 @@ reading mode.
 
 In the view you can:
 
-- add words, and edit any field inline;
-- drag the handle on a card to reorder;
+- add words, or bulk-import many at once (one per line, Tab/`|`/`;` columns);
+- edit any field inline;
+- drag the handle on a card to reorder (a line shows the insert position);
 - delete a word (with confirmation);
 - edit the theory block live (written back above `## Words`);
 - review due words as flashcards (scheduled with

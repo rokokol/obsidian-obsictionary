@@ -12,28 +12,41 @@ function buildRow(headers: string[], values: Record<string, string>): Record<str
   return row;
 }
 
-/** Append a word to a dictionary, creating the `## Words` table if absent. */
-export async function appendWord(
+/** Append one or more words, creating the `## Words` table if absent. */
+export async function appendWords(
   app: App,
   file: TFile,
-  values: Record<string, string>,
+  valuesList: Record<string, string>[],
 ): Promise<void> {
+  if (valuesList.length === 0) return;
   const doc = await readDictionary(app, file);
   if (!doc) return;
 
   if (doc.table) {
     await updateWordsTable(app, file, (table) => {
-      table.rows.push(buildRow(table.headers, values));
+      for (const values of valuesList) table.rows.push(buildRow(table.headers, values));
     });
     return;
   }
 
   const headers = [...contentColumnsFor(doc.frontmatter.preset), DUE_COLUMN, SRS_COLUMN];
-  const table: MarkdownTable = { headers, rows: [buildRow(headers, values)] };
+  const table: MarkdownTable = {
+    headers,
+    rows: valuesList.map((values) => buildRow(headers, values)),
+  };
   await app.vault.process(file, (data) => {
     const trimmed = data.replace(/\s+$/, "");
     return `${trimmed}\n\n## Words\n\n${serializeTable(table)}\n`;
   });
+}
+
+/** Append a single word to a dictionary. */
+export async function appendWord(
+  app: App,
+  file: TFile,
+  values: Record<string, string>,
+): Promise<void> {
+  await appendWords(app, file, [values]);
 }
 
 function availablePath(app: App, folder: string, base: string): string {
