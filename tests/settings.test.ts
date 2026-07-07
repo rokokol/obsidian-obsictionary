@@ -6,9 +6,18 @@ describe("sanitizePropertyKeys", () => {
     expect(sanitizePropertyKeys("level, author\n level ")).toEqual(["level", "author"]);
   });
 
-  it("drops system keys", () => {
-    expect(sanitizePropertyKeys("level\nobsictionary\ntags\nup\nsrs\nsource\nlevel")).toEqual([
-      "level",
+  it("drops only forbidden plugin keys", () => {
+    expect(
+      sanitizePropertyKeys("level\nobsictionary\npreset\nsrs\ndue\nposition\nlevel"),
+    ).toEqual(["level"]);
+  });
+
+  it("keeps nav, related and vault keys (now user-manageable)", () => {
+    expect(sanitizePropertyKeys("up\nsource\nrelated\ntags")).toEqual([
+      "up",
+      "source",
+      "related",
+      "tags",
     ]);
   });
 

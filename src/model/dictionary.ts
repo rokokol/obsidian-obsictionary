@@ -20,11 +20,8 @@ export function contentColumns(headers: string[]): string[] {
   return headers.filter((header) => !isManagedColumn(header));
 }
 
-/** Frontmatter keys owned by the plugin (excluded from the "properties" table). */
-export const PLUGIN_KEYS = new Set(["obsictionary", "preset", "lang", "related"]);
-
-/** Standard vault keys we never surface as dictionary "properties". */
-export const STANDARD_KEYS = new Set(["tags", "created", "aliases", "cssclasses"]);
+/** Frontmatter keys owned by the plugin (never shown as user "properties"). */
+export const PLUGIN_KEYS = new Set(["obsictionary", "preset"]);
 
 export interface WordsLocation {
   /** Markdown before the `## Words` heading — treated as free-form theory. */

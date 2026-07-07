@@ -1,23 +1,16 @@
-import { getFrontMatterInfo, type App, type TFile } from "obsidian";
-import {
-  locateWords,
-  PLUGIN_KEYS,
-  replaceTheory,
-  replaceWordsTable,
-  STANDARD_KEYS,
-} from "../model/dictionary";
+import { getAllTags, getFrontMatterInfo, type App, type TFile } from "obsidian";
+import { locateWords, PLUGIN_KEYS, replaceTheory, replaceWordsTable } from "../model/dictionary";
 import type { MarkdownTable } from "../model/table";
 
-/** Frontmatter flag value marking a note as an Obsictionary dictionary. */
+/** Tag that marks a note as an Obsictionary dictionary (preferred). */
+export const DICTIONARY_TAG = "obsictionary";
+/** Legacy frontmatter flag (`obsictionary: dictionary`), still recognised. */
 export const DICTIONARY_FLAG = "obsictionary";
 export const DICTIONARY_FLAG_VALUE = "dictionary";
 
 export interface DictionaryFrontmatter {
   preset: string | null;
-  lang: string | null;
-  /** Raw wikilink strings from `related`, e.g. "[[Phrasal verbs]]". */
-  related: string[];
-  /** Non-plugin, non-standard keys shown in the properties mini-table. */
+  /** Non-plugin keys shown in the properties mini-table (incl. related, nav). */
   properties: Record<string, unknown>;
 }
 
@@ -29,27 +22,14 @@ export interface DictionaryDoc {
   table: MarkdownTable | null;
 }
 
-function asStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((v): v is string => typeof v === "string");
-  }
-  return typeof value === "string" ? [value] : [];
-}
-
 function parseFrontmatter(fm: Record<string, unknown>): DictionaryFrontmatter {
   const preset = fm["preset"];
-  const lang = fm["lang"];
   const properties: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fm)) {
-    if (PLUGIN_KEYS.has(key) || STANDARD_KEYS.has(key)) continue;
+    if (PLUGIN_KEYS.has(key)) continue;
     properties[key] = value;
   }
-  return {
-    preset: typeof preset === "string" ? preset : null,
-    lang: typeof lang === "string" ? lang : null,
-    related: asStringArray(fm["related"]),
-    properties,
-  };
+  return { preset: typeof preset === "string" ? preset : null, properties };
 }
 
 /** Raw frontmatter object for a file, from Obsidian's metadata cache. */
@@ -60,16 +40,21 @@ function frontmatterOf(app: App, file: TFile): Record<string, unknown> | null {
   return fm as Record<string, unknown>;
 }
 
-/** Whether a file is flagged as an Obsictionary dictionary. */
+/**
+ * Whether a note is an Obsictionary dictionary — carries the `#obsictionary`
+ * tag, or the legacy `obsictionary: dictionary` frontmatter flag.
+ */
 export function isDictionaryFile(app: App, file: TFile): boolean {
-  const fm = frontmatterOf(app, file);
-  return fm?.[DICTIONARY_FLAG] === DICTIONARY_FLAG_VALUE;
+  const cache = app.metadataCache.getFileCache(file);
+  if (!cache) return false;
+  if ((getAllTags(cache) ?? []).includes(`#${DICTIONARY_TAG}`)) return true;
+  return cache.frontmatter?.[DICTIONARY_FLAG] === DICTIONARY_FLAG_VALUE;
 }
 
 /** Read and parse a dictionary note. Returns null if it is not a dictionary. */
 export async function readDictionary(app: App, file: TFile): Promise<DictionaryDoc | null> {
-  const fm = frontmatterOf(app, file);
-  if (fm?.[DICTIONARY_FLAG] !== DICTIONARY_FLAG_VALUE) return null;
+  if (!isDictionaryFile(app, file)) return null;
+  const fm = frontmatterOf(app, file) ?? {};
   const content = await app.vault.cachedRead(file);
   const info = getFrontMatterInfo(content);
   const body = content.slice(info.contentStart);
