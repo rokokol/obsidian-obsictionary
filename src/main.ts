@@ -1,5 +1,5 @@
 import { MarkdownView, Notice, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
-import { appendWord, createDictionaryNote } from "./commands/dictionaryCommands";
+import { appendWord, appendWords, createDictionaryNote } from "./commands/dictionaryCommands";
 import { DUE_COLUMN, SRS_COLUMN } from "./model/dictionary";
 import { DictionaryCache } from "./obsidian/cache";
 import { isDictionaryFile, readDictionary } from "./obsidian/dictionaryFile";
@@ -8,6 +8,7 @@ import { renderStats } from "./render/statsView";
 import { gatherDue } from "./review/collect";
 import { contentColumnsFor, DEFAULT_SETTINGS, type ObsictionarySettings } from "./settings";
 import { AddWordModal } from "./ui/addWordModal";
+import { ImportWordsModal } from "./ui/importWordsModal";
 import { ReviewModal } from "./ui/reviewModal";
 import { ObsictionarySettingTab } from "./ui/settingsTab";
 import { DICTIONARY_VIEW_TYPE, DictionaryEditorView } from "./view/dictionaryEditorView";
@@ -96,6 +97,17 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "import-words",
+      name: "Import words to dictionary",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !isDictionaryFile(this.app, file)) return false;
+        if (!checking) void this.promptImportWords(file);
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "open-as-dictionary",
       name: "Open as dictionary",
       checkCallback: (checking) => {
@@ -144,6 +156,17 @@ export default class ObsictionaryPlugin extends Plugin {
       : contentColumnsFor(doc.frontmatter.preset);
     new AddWordModal(this.app, columns, (values) => {
       void appendWord(this.app, file, values);
+    }).open();
+  }
+
+  private async promptImportWords(file: TFile): Promise<void> {
+    const doc = await readDictionary(this.app, file);
+    if (!doc) return;
+    const columns = doc.table
+      ? doc.table.headers.filter((h) => h !== DUE_COLUMN && h !== SRS_COLUMN)
+      : contentColumnsFor(doc.frontmatter.preset);
+    new ImportWordsModal(this.app, columns, (rows) => {
+      void appendWords(this.app, file, rows);
     }).open();
   }
 

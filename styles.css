@@ -236,6 +236,9 @@
   flex-direction: column;
   gap: var(--size-4-4);
   overflow-y: auto;
+  /* Clip horizontal overflow: with overflow-y set, overflow-x computes to auto,
+     which otherwise shows a stray horizontal scrollbar thumb at the bottom. */
+  overflow-x: hidden;
 }
 
 .obsictionary-view-toolbar {
@@ -410,7 +413,29 @@
   opacity: 0.4;
 }
 
-.obsictionary-card.is-drop-target {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
+/* Insert-position indicator while dragging */
+.obsictionary-card.drop-before {
+  box-shadow: inset 3px 0 0 0 var(--interactive-accent);
+}
+
+.obsictionary-card.drop-after {
+  box-shadow: inset -3px 0 0 0 var(--interactive-accent);
+}
+
+/* Import modal */
+.obsictionary-import-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.obsictionary-import-input {
+  width: 100%;
+  font-family: var(--font-monospace);
+  resize: vertical;
+}
+
+.obsictionary-import-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  margin: var(--size-4-2) 0;
 }

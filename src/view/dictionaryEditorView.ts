@@ -7,7 +7,7 @@ import {
   type ViewStateResult,
   type WorkspaceLeaf,
 } from "obsidian";
-import { appendWord } from "../commands/dictionaryCommands";
+import { appendWord, appendWords } from "../commands/dictionaryCommands";
 import type ObsictionaryPlugin from "../main";
 import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import {
@@ -22,6 +22,7 @@ import { gatherDue } from "../review/collect";
 import { contentColumnsFor, frontColumnFor } from "../settings";
 import { AddWordModal } from "../ui/addWordModal";
 import { ConfirmModal } from "../ui/confirmModal";
+import { ImportWordsModal } from "../ui/importWordsModal";
 import { ReviewModal } from "../ui/reviewModal";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
@@ -126,6 +127,9 @@ export class DictionaryEditorView extends ItemView {
     const bar = root.createDiv({ cls: "obsictionary-view-toolbar" });
     this.toolButton(bar, "plus", "Add word", () => {
       this.promptAdd(file, doc);
+    });
+    this.toolButton(bar, "clipboard-paste", "Import", () => {
+      this.promptImport(file, doc);
     });
     this.toolButton(bar, "play", "Review", () => {
       void this.review(file);
@@ -247,9 +251,11 @@ export class DictionaryEditorView extends ItemView {
         if (evt.dataTransfer) evt.dataTransfer.effectAllowed = "move";
       });
       handle.addEventListener("dragend", () => {
+        this.dragIndex = null;
         card.removeClass("is-dragging");
-        list.findAll(".is-drop-target").forEach((el) => {
-          el.removeClass("is-drop-target");
+        list.findAll(".drop-before, .drop-after").forEach((el) => {
+          el.removeClass("drop-before");
+          el.removeClass("drop-after");
         });
       });
 
@@ -359,41 +365,63 @@ export class DictionaryEditorView extends ItemView {
     });
   }
 
+  /** True when the pointer is past the card's horizontal midpoint (insert after). */
+  private static isAfter(card: HTMLElement, clientX: number): boolean {
+    const rect = card.getBoundingClientRect();
+    return clientX > rect.left + rect.width / 2;
+  }
+
   private attachDragTarget(card: HTMLElement, file: TFile, rowIndex: number): void {
     card.addEventListener("dragover", (evt) => {
-      if (this.dragIndex === null) return;
+      if (this.dragIndex === null || this.dragIndex === rowIndex) return;
       evt.preventDefault();
       if (evt.dataTransfer) evt.dataTransfer.dropEffect = "move";
-      card.addClass("is-drop-target");
+      const after = DictionaryEditorView.isAfter(card, evt.clientX);
+      card.toggleClass("drop-after", after);
+      card.toggleClass("drop-before", !after);
     });
     card.addEventListener("dragleave", () => {
-      card.removeClass("is-drop-target");
+      card.removeClass("drop-before");
+      card.removeClass("drop-after");
     });
     card.addEventListener("drop", (evt) => {
       evt.preventDefault();
-      card.removeClass("is-drop-target");
+      card.removeClass("drop-before");
+      card.removeClass("drop-after");
       const from = this.dragIndex;
       this.dragIndex = null;
-      if (from !== null && from !== rowIndex) void this.moveWord(file, from, rowIndex);
+      if (from === null) return;
+      const insertBefore = rowIndex + (DictionaryEditorView.isAfter(card, evt.clientX) ? 1 : 0);
+      void this.reorder(file, from, insertBefore);
     });
   }
 
-  private async moveWord(file: TFile, from: number, to: number): Promise<void> {
+  /** Move row `from` so it lands at pre-removal index `insertBefore`. */
+  private async reorder(file: TFile, from: number, insertBefore: number): Promise<void> {
     await updateWordsTable(this.app, file, (table) => {
       if (from < 0 || from >= table.rows.length) return;
       const [moved] = table.rows.splice(from, 1);
       if (!moved) return;
-      const target = from < to ? to - 1 : to;
-      table.rows.splice(Math.max(0, Math.min(target, table.rows.length)), 0, moved);
+      const idx = from < insertBefore ? insertBefore - 1 : insertBefore;
+      table.rows.splice(Math.max(0, Math.min(idx, table.rows.length)), 0, moved);
     });
   }
 
-  private promptAdd(file: TFile, doc: DictionaryDoc): void {
-    const columns = doc.table
+  private contentColumns(doc: DictionaryDoc): string[] {
+    return doc.table
       ? doc.table.headers.filter((h) => h !== SRS_COLUMN && h !== DUE_COLUMN)
       : contentColumnsFor(doc.frontmatter.preset);
-    new AddWordModal(this.app, columns, (values) => {
+  }
+
+  private promptAdd(file: TFile, doc: DictionaryDoc): void {
+    new AddWordModal(this.app, this.contentColumns(doc), (values) => {
       void appendWord(this.app, file, values);
+    }).open();
+  }
+
+  private promptImport(file: TFile, doc: DictionaryDoc): void {
+    new ImportWordsModal(this.app, this.contentColumns(doc), (rows) => {
+      void appendWords(this.app, file, rows);
     }).open();
   }
 
