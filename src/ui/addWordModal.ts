@@ -1,5 +1,6 @@
 import { Modal, Setting, type App } from "obsidian";
 import { missingColumns, sanitizeCell } from "../model/word";
+import { enhanceFieldInput } from "../obsidian/fieldInput";
 
 /**
  * Prompt for the fields of a new word. Every field is required: submitting with
@@ -8,14 +9,21 @@ import { missingColumns, sanitizeCell } from "../model/word";
  */
 export class AddWordModal extends Modal {
   private readonly columns: string[];
+  private readonly sourcePath: string;
   private readonly draft: Record<string, string> = {};
   private readonly onSubmit: (values: Record<string, string>) => void;
   private errorEl: HTMLElement | null = null;
   private result: Record<string, string> | null = null;
 
-  constructor(app: App, columns: string[], onSubmit: (values: Record<string, string>) => void) {
+  constructor(
+    app: App,
+    columns: string[],
+    sourcePath: string,
+    onSubmit: (values: Record<string, string>) => void,
+  ) {
     super(app);
     this.columns = columns;
+    this.sourcePath = sourcePath;
     this.onSubmit = onSubmit;
   }
 
@@ -35,6 +43,7 @@ export class AddWordModal extends Modal {
             text.inputEl.focus();
           }, 0);
         }
+        enhanceFieldInput(this.app, text.inputEl, this.sourcePath);
         text.inputEl.addEventListener("keydown", (evt) => {
           if (evt.key === "Enter") this.submit();
         });

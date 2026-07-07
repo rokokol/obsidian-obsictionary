@@ -18,6 +18,7 @@ import {
   updateWordsTable,
   type DictionaryDoc,
 } from "../obsidian/dictionaryFile";
+import { enhanceFieldInput } from "../obsidian/fieldInput";
 import { renderDictionaryMeta } from "../render/meta";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { gatherDue } from "../review/collect";
@@ -424,13 +425,16 @@ export class DictionaryEditorView extends ItemView {
     input.value = value;
     input.focus();
     input.select();
+    enhanceFieldInput(this.app, input, file.path);
 
     let committed = false;
     const finish = (save: boolean): void => {
       if (committed) return;
       committed = true;
       const next = sanitizeCell(input.value);
-      if (save && next !== value) {
+      // Clearing a field would orphan the row (a blank front hides the card),
+      // so an empty edit reverts to the previous value instead of saving.
+      if (save && next !== "" && next !== value) {
         void this.editCell(file, rowIndex, column, next);
       } else {
         this.renderEditable(el, file, rowIndex, column, value);
@@ -515,7 +519,7 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private promptAdd(file: TFile, doc: DictionaryDoc): void {
-    new AddWordModal(this.app, contentColumnsOf(doc), (values) => {
+    new AddWordModal(this.app, contentColumnsOf(doc), file.path, (values) => {
       void appendWord(this.app, file, values);
     }).open();
   }
