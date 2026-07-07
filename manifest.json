@@ -1,0 +1,10 @@
+{
+  "id": "obsictionary",
+  "name": "Obsictionary",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Turn notes into spaced-repetition dictionaries: styled dictionary view, per-word FSRS review, stats, presets and audio/image attachments.",
+  "author": "rokokol",
+  "authorUrl": "https://github.com/rokokol",
+  "isDesktopOnly": false
+}

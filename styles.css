@@ -1,0 +1,230 @@
+/* Obsictionary — styled dictionary view (reading mode). */
+
+.obsictionary-dictionary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+/* Header: properties table + related links */
+.obsictionary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--size-4-2) var(--size-4-6);
+  padding-bottom: var(--size-4-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.obsictionary-props {
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.obsictionary-props th,
+.obsictionary-props td {
+  text-align: left;
+  padding: 2px var(--size-4-2) 2px 0;
+  border: none;
+}
+
+.obsictionary-props th {
+  font-weight: var(--font-medium);
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.obsictionary-related {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-2);
+  font-size: var(--font-ui-small);
+}
+
+.obsictionary-related-label {
+  color: var(--text-muted);
+}
+
+/* Word cards */
+.obsictionary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--size-4-2);
+}
+
+.obsictionary-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+  padding: var(--size-4-3);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.obsictionary-word {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+.obsictionary-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.obsictionary-field {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: baseline;
+}
+
+.obsictionary-field-name {
+  flex: 0 0 auto;
+  min-width: 5em;
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.obsictionary-field-value {
+  color: var(--text-normal);
+}
+
+/* Inline media inside cells stays tidy. */
+.obsictionary-card img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-s);
+}
+
+.obsictionary-card .internal-embed audio {
+  width: 100%;
+}
+
+/* Toolbar */
+.obsictionary-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.obsictionary-review-btn {
+  cursor: pointer;
+}
+
+/* Review modal */
+.obsictionary-review-modal .obsictionary-review-progress {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  text-align: center;
+  margin-bottom: var(--size-4-2);
+}
+
+.obsictionary-review-front {
+  font-size: 1.8em;
+  font-weight: var(--font-bold);
+  text-align: center;
+  padding: var(--size-4-6) 0;
+}
+
+.obsictionary-review-back {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  padding-bottom: var(--size-4-4);
+}
+
+.obsictionary-review-field {
+  text-align: center;
+}
+
+.obsictionary-review-field-name {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.obsictionary-review-field-value {
+  font-size: var(--font-ui-large);
+  color: var(--text-normal);
+}
+
+.obsictionary-review-controls {
+  display: flex;
+  justify-content: center;
+  gap: var(--size-4-2);
+  flex-wrap: wrap;
+}
+
+.obsictionary-rate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  min-width: 4.5em;
+  padding: var(--size-4-2);
+}
+
+.obsictionary-rate-hint {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.obsictionary-rate-again {
+  color: var(--text-error);
+}
+
+.obsictionary-rate-easy {
+  color: var(--text-success);
+}
+
+.obsictionary-review-done {
+  text-align: center;
+  font-size: var(--font-ui-large);
+  padding: var(--size-4-6) 0;
+}
+
+/* Stats */
+.obsictionary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: var(--size-4-2);
+}
+
+.obsictionary-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--size-4-2);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.obsictionary-stat-value {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+}
+
+.obsictionary-stat-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.obsictionary-stat.is-due .obsictionary-stat-value {
+  color: var(--text-accent);
+}
+
+.obsictionary-stats-empty {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
