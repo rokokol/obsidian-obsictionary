@@ -1,0 +1,46 @@
+{
+  "name": "obsidian-obsictionary",
+  "version": "0.1.0",
+  "description": "Turn Obsidian notes into spaced-repetition dictionaries: styled dictionary view, per-word FSRS review, stats, presets and attachments.",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "npm run typecheck && node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "dictionary",
+    "vocabulary",
+    "spaced-repetition",
+    "fsrs",
+    "flashcards"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.24.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-import": "^2.31.0",
+    "obsidian": "^1.7.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "ts-fsrs": "^4.7.0"
+  }
+}

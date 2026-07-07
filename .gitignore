@@ -1,0 +1,15 @@
+# build output
+main.js
+main.js.map
+dist/
+
+# deps
+node_modules/
+
+# local config
+.env
+.env.local
+
+# editor / os
+.DS_Store
+*.log
