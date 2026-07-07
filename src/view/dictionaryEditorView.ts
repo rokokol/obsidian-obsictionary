@@ -491,12 +491,15 @@ export class DictionaryEditorView extends ItemView {
       evt.preventDefault();
       if (evt.dataTransfer) evt.dataTransfer.dropEffect = "move";
       const after = DictionaryEditorView.isAfter(card, evt.clientX);
+      // No-op when the indicator is already correct — avoids repaint flicker as
+      // the pointer moves across the card's children (which fire dragenter).
+      if (card.hasClass(after ? "drop-after" : "drop-before")) return;
+      card.parentElement?.findAll(".drop-before, .drop-after").forEach((el) => {
+        el.removeClass("drop-before");
+        el.removeClass("drop-after");
+      });
       card.toggleClass("drop-after", after);
       card.toggleClass("drop-before", !after);
-    });
-    card.addEventListener("dragleave", () => {
-      card.removeClass("drop-before");
-      card.removeClass("drop-after");
     });
     card.addEventListener("drop", (evt) => {
       evt.preventDefault();
