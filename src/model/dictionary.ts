@@ -80,6 +80,21 @@ export function locateWords(body: string): WordsLocation {
 }
 
 /**
+ * Replace the theory (everything before the `## Words` heading) with `theory`,
+ * preserving the heading, table and everything after it.
+ */
+export function replaceTheory(body: string, theory: string): string {
+  const lines = body.split("\n");
+  const idx = lines.findIndex((line) => WORDS_HEADING_RE.test(line));
+  const trimmed = theory.replace(/\s+$/, "");
+  if (idx === -1) {
+    return trimmed === "" ? "" : `${trimmed}\n`;
+  }
+  const after = lines.slice(idx).join("\n");
+  return trimmed === "" ? after : `${trimmed}\n\n${after}`;
+}
+
+/**
  * Replace the words table in `body` with a freshly serialized one, leaving
  * theory and everything after the table untouched. If no table exists this is
  * a no-op returning the original body.

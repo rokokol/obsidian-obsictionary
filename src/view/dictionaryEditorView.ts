@@ -12,14 +12,16 @@ import type ObsictionaryPlugin from "../main";
 import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import {
   readDictionary,
+  updateTheory,
   updateWordsTable,
   type DictionaryDoc,
 } from "../obsidian/dictionaryFile";
-import { renderPropertiesTable, renderRelatedLinks } from "../render/blocks";
+import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "../render/blocks";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { gatherDue } from "../review/collect";
 import { contentColumnsFor, frontColumnFor } from "../settings";
 import { AddWordModal } from "../ui/addWordModal";
+import { ConfirmModal } from "../ui/confirmModal";
 import { ReviewModal } from "../ui/reviewModal";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
@@ -33,6 +35,7 @@ function sanitizeCell(value: string): string {
 export class DictionaryEditorView extends ItemView {
   private readonly plugin: ObsictionaryPlugin;
   private file: TFile | null = null;
+  private dragIndex: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsictionaryPlugin) {
     super(leaf);
@@ -155,17 +158,60 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private renderTheory(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
-    if (doc.theory.trim() === "") return;
-    const el = root.createDiv({ cls: "obsictionary-view-theory" });
-    void MarkdownRenderer.render(this.app, doc.theory, el, file.path, this);
+    const hasTheory = doc.theory.trim() !== "";
+    const section = root.createDiv({ cls: "obsictionary-view-theory" });
+
+    const bar = section.createDiv({ cls: "obsictionary-theory-bar" });
+    const editBtn = bar.createEl("button", {
+      cls: "obsictionary-theory-edit",
+      attr: { "aria-label": "Edit theory" },
+    });
+    setIcon(editBtn, "pencil");
+
+    const bodyEl = section.createDiv({ cls: "obsictionary-theory-body" });
+    if (hasTheory) {
+      void MarkdownRenderer.render(this.app, doc.theory, bodyEl, file.path, this);
+    } else {
+      bodyEl.createDiv({ cls: "obsictionary-view-empty is-inline", text: "Add theory…" });
+    }
+
+    const startEdit = (): void => {
+      this.beginTheoryEdit(bodyEl, file, doc.theory);
+    };
+    editBtn.addEventListener("click", startEdit);
+    if (!hasTheory) bodyEl.addEventListener("click", startEdit);
+  }
+
+  private beginTheoryEdit(bodyEl: HTMLElement, file: TFile, theory: string): void {
+    bodyEl.empty();
+    const textarea = bodyEl.createEl("textarea", { cls: "obsictionary-theory-input" });
+    textarea.value = theory;
+    textarea.rows = Math.max(3, theory.split("\n").length + 1);
+    textarea.focus();
+
+    const controls = bodyEl.createDiv({ cls: "obsictionary-theory-controls" });
+    const save = controls.createEl("button", { cls: "mod-cta", text: "Save" });
+    const cancel = controls.createEl("button", { text: "Cancel" });
+    save.addEventListener("click", () => {
+      void this.saveTheory(file, textarea.value);
+    });
+    cancel.addEventListener("click", () => {
+      void this.renderView();
+    });
+  }
+
+  private async saveTheory(file: TFile, theory: string): Promise<void> {
+    await updateTheory(this.app, file, theory);
   }
 
   private renderMeta(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
-    const entries = Object.entries(doc.frontmatter.properties);
-    if (entries.length === 0 && doc.frontmatter.related.length === 0) return;
+    const props = doc.frontmatter.properties;
+    const entries = Object.entries(props).filter(([key]) => !NAV_KEYS.has(key));
     const meta = root.createDiv({ cls: "obsictionary-meta" });
+    renderNav(meta, props, file.path);
     renderPropertiesTable(meta, entries);
     renderRelatedLinks(meta, doc.frontmatter.related, file.path);
+    if (!meta.hasChildNodes()) meta.remove();
   }
 
   private renderWords(
@@ -185,14 +231,38 @@ export class DictionaryEditorView extends ItemView {
     }
 
     doc.table.rows.forEach((row, rowIndex) => {
+      if ((row[front] ?? "").trim() === "") return;
       const card = list.createDiv({ cls: "obsictionary-card obsictionary-card-editable" });
+      this.attachDragTarget(card, file, rowIndex);
+
+      const handle = card.createDiv({
+        cls: "obsictionary-card-handle",
+        attr: { "aria-label": "Drag to reorder", draggable: "true" },
+      });
+      setIcon(handle, "grip-vertical");
+      handle.addEventListener("dragstart", (evt) => {
+        this.dragIndex = rowIndex;
+        card.addClass("is-dragging");
+        evt.dataTransfer?.setData("text/plain", rowIndex.toString());
+        if (evt.dataTransfer) evt.dataTransfer.effectAllowed = "move";
+      });
+      handle.addEventListener("dragend", () => {
+        card.removeClass("is-dragging");
+        list.findAll(".is-drop-target").forEach((el) => {
+          el.removeClass("is-drop-target");
+        });
+      });
+
       const del = card.createEl("button", {
         cls: "obsictionary-card-delete",
         attr: { "aria-label": "Delete word" },
       });
       setIcon(del, "trash-2");
+      const word = (row[front] ?? "").trim();
       del.addEventListener("click", () => {
-        void this.deleteWord(file, rowIndex);
+        new ConfirmModal(this.app, `Delete "${word}"?`, "Delete", () => {
+          void this.deleteWord(file, rowIndex);
+        }).open();
       });
 
       const frontEl = card.createDiv({ cls: "obsictionary-word" });
@@ -286,6 +356,35 @@ export class DictionaryEditorView extends ItemView {
   private async deleteWord(file: TFile, rowIndex: number): Promise<void> {
     await updateWordsTable(this.app, file, (table) => {
       if (rowIndex >= 0 && rowIndex < table.rows.length) table.rows.splice(rowIndex, 1);
+    });
+  }
+
+  private attachDragTarget(card: HTMLElement, file: TFile, rowIndex: number): void {
+    card.addEventListener("dragover", (evt) => {
+      if (this.dragIndex === null) return;
+      evt.preventDefault();
+      if (evt.dataTransfer) evt.dataTransfer.dropEffect = "move";
+      card.addClass("is-drop-target");
+    });
+    card.addEventListener("dragleave", () => {
+      card.removeClass("is-drop-target");
+    });
+    card.addEventListener("drop", (evt) => {
+      evt.preventDefault();
+      card.removeClass("is-drop-target");
+      const from = this.dragIndex;
+      this.dragIndex = null;
+      if (from !== null && from !== rowIndex) void this.moveWord(file, from, rowIndex);
+    });
+  }
+
+  private async moveWord(file: TFile, from: number, to: number): Promise<void> {
+    await updateWordsTable(this.app, file, (table) => {
+      if (from < 0 || from >= table.rows.length) return;
+      const [moved] = table.rows.splice(from, 1);
+      if (!moved) return;
+      const target = from < to ? to - 1 : to;
+      table.rows.splice(Math.max(0, Math.min(target, table.rows.length)), 0, moved);
     });
   }
 
