@@ -1,6 +1,7 @@
 import {
   ItemView,
   MarkdownRenderer,
+  Menu,
   Notice,
   setIcon,
   TFile,
@@ -92,6 +93,10 @@ export class DictionaryEditorView extends ItemView {
   }
 
   override onOpen(): Promise<void> {
+    this.addAction("file-code", "Open as markdown", () => {
+      const file = this.file;
+      if (file) void this.plugin.openAsMarkdown(file, this.leaf);
+    });
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (file.path === this.file?.path) void this.renderView();
@@ -226,26 +231,30 @@ export class DictionaryEditorView extends ItemView {
     this.toolButton(bar, "play", "Review", () => {
       void this.review(file);
     });
-    this.renderSortControl(bar);
     const spacer = bar.createDiv({ cls: "obsictionary-view-toolbar-spacer" });
     spacer.style.flex = "1";
-    this.toolButton(bar, "file-code", "Open as markdown", () => {
-      void this.plugin.openAsMarkdown(file, this.leaf);
-    });
+    this.renderSortControl(bar);
   }
 
   private renderSortControl(bar: HTMLElement): void {
-    const wrap = bar.createDiv({ cls: "obsictionary-sort" });
-    const icon = wrap.createSpan({ cls: "obsictionary-tool-icon" });
-    setIcon(icon, "arrow-up-down");
-    const select = wrap.createEl("select", { cls: "dropdown obsictionary-sort-select" });
-    for (const [mode, label] of Object.entries(SORT_LABELS)) {
-      select.createEl("option", { value: mode, text: label });
-    }
-    select.value = this.sortMode;
-    select.addEventListener("change", () => {
-      this.sortMode = select.value as SortMode;
-      void this.renderView();
+    const btn = bar.createEl("button", { cls: "obsictionary-tool" });
+    const iconEl = btn.createSpan({ cls: "obsictionary-tool-icon" });
+    setIcon(iconEl, "arrow-up-down");
+    btn.createSpan({ text: SORT_LABELS[this.sortMode] });
+    btn.addEventListener("click", (evt) => {
+      const menu = new Menu();
+      for (const [mode, label] of Object.entries(SORT_LABELS)) {
+        menu.addItem((item) => {
+          item
+            .setTitle(label)
+            .setChecked(this.sortMode === mode)
+            .onClick(() => {
+              this.sortMode = mode as SortMode;
+              void this.renderView();
+            });
+        });
+      }
+      menu.showAtMouseEvent(evt);
     });
   }
 

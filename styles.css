@@ -278,18 +278,6 @@ body.obsictionary-hide-status .status-bar {
   padding: var(--size-4-6) 0;
 }
 
-/* Sort control */
-.obsictionary-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-4-1);
-  color: var(--text-muted);
-}
-
-.obsictionary-sort-select {
-  font-size: var(--font-ui-small);
-}
-
 .obsictionary-card-editable {
   position: relative;
 }
