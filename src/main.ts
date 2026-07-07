@@ -64,6 +64,7 @@ export default class ObsictionaryPlugin extends Plugin {
 
     this.registerMarkdownPostProcessor((el, ctx) => {
       renderDictionary(
+        this.app,
         el,
         ctx,
         (sourcePath) => {
