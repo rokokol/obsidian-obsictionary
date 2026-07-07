@@ -78,20 +78,18 @@ export class ObsictionarySettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Displayed properties")
       .setDesc(
-        "Frontmatter keys shown in the dictionary header, one per line (or " +
-          "comma-separated), in this order. Wikilink/URL values render as links. " +
-          "Leave empty to show every property; the default lists the graph links " +
-          "(up/prev/next/left, source, related). Plugin keys (obsictionary, preset, " +
-          "srs, due) can't be added.",
+        "Frontmatter keys shown in the dictionary header, comma-separated, in this " +
+          "order. Wikilink/URL values render as links. Leave empty to show every " +
+          "property; the default is up, prev, next, left, source, related. Managed " +
+          "keys (preset, srs, due) can't be added.",
       )
-      .addTextArea((text) => {
-        text.inputEl.rows = 4;
-        text.setPlaceholder("up\nsource\nrelated\nlevel");
-        text.setValue(this.plugin.settings.properties.join("\n"));
+      .addText((text) => {
+        text.setPlaceholder("up, source, related, level");
+        text.setValue(this.plugin.settings.properties.join(", "));
         const commit = (): void => {
           const keys = sanitizePropertyKeys(text.getValue());
           this.plugin.settings.properties = keys;
-          text.setValue(keys.join("\n"));
+          text.setValue(keys.join(", "));
           void this.plugin.saveSettings();
           this.plugin.refreshDictionaryViews();
         };
