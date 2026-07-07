@@ -1,5 +1,5 @@
 import { Modal, Setting, type App } from "obsidian";
-import { parseImport } from "../model/import";
+import { parseImport, type ImportResult } from "../model/import";
 
 /** Paste multiple words at once (one per line, columns separated by tab/|/;). */
 export class ImportWordsModal extends Modal {
@@ -29,9 +29,12 @@ export class ImportWordsModal extends Modal {
     textarea.focus();
 
     const count = contentEl.createDiv({ cls: "obsictionary-import-count" });
-    const parsed = (): Record<string, string>[] => parseImport(textarea.value, this.columns);
+    const parse = (): ImportResult => parseImport(textarea.value, this.columns);
     const updateCount = (): void => {
-      count.setText(`${parsed().length.toString()} words`);
+      const { rows, incomplete } = parse();
+      const parts = [`${rows.length.toString()} words`];
+      if (incomplete > 0) parts.push(`${incomplete.toString()} skipped (incomplete)`);
+      count.setText(parts.join(" · "));
     };
     textarea.addEventListener("input", updateCount);
     updateCount();
@@ -41,7 +44,7 @@ export class ImportWordsModal extends Modal {
         .setButtonText("Import")
         .setCta()
         .onClick(() => {
-          const rows = parsed();
+          const { rows } = parse();
           this.close();
           if (rows.length > 0) this.onSubmit(rows);
         });

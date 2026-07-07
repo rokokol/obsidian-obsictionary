@@ -1,14 +1,11 @@
 import type { MarkdownPostProcessorContext } from "obsidian";
-import { DUE_COLUMN, PLUGIN_KEYS, SRS_COLUMN, STANDARD_KEYS } from "../model/dictionary";
+import { isManagedColumn, SRS_COLUMN } from "../model/dictionary";
 import {
   DICTIONARY_FLAG,
   DICTIONARY_FLAG_VALUE,
 } from "../obsidian/dictionaryFile";
-import { frontColumnFor, selectProperties } from "../settings";
-import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "./blocks";
-
-/** Columns never shown as visible dictionary fields. */
-const HIDDEN_COLUMNS = new Set([SRS_COLUMN, DUE_COLUMN]);
+import { frontColumnFor, isSystemProperty, selectProperties } from "../settings";
+import { renderNav, renderPropertiesTable, renderRelatedLinks } from "./blocks";
 
 function getFrontmatter(ctx: MarkdownPostProcessorContext): Record<string, unknown> | null {
   const fm: unknown = ctx.frontmatter;
@@ -40,13 +37,7 @@ function renderProperties(
   fm: Record<string, unknown>,
   allow: string[],
 ): void {
-  const entries = Object.entries(fm).filter(
-    ([key]) =>
-      !PLUGIN_KEYS.has(key) &&
-      !STANDARD_KEYS.has(key) &&
-      !NAV_KEYS.has(key) &&
-      key !== "position",
-  );
+  const entries = Object.entries(fm).filter(([key]) => !isSystemProperty(key));
   renderPropertiesTable(container, selectProperties(entries, allow));
 }
 
@@ -72,7 +63,7 @@ function renderCards(
   front: string,
 ): HTMLElement {
   const list = createDiv({ cls: "obsictionary-cards" });
-  const backColumns = headers.filter((h) => h !== front && !HIDDEN_COLUMNS.has(h));
+  const backColumns = headers.filter((h) => h !== front && !isManagedColumn(h));
 
   for (const tr of Array.from(table.querySelectorAll("tbody tr"))) {
     const cells = Array.from(tr.children);

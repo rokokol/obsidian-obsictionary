@@ -7,6 +7,19 @@ export const WORDS_HEADING_RE = /^#{1,6}\s+Words\s*$/i;
 export const SRS_COLUMN = "srs";
 export const DUE_COLUMN = "due";
 
+/** Columns the plugin owns and hides from the word view. */
+export const MANAGED_COLUMNS: ReadonlySet<string> = new Set([SRS_COLUMN, DUE_COLUMN]);
+
+/** Whether a column is plugin-managed (`srs`/`due`) rather than user content. */
+export function isManagedColumn(header: string): boolean {
+  return MANAGED_COLUMNS.has(header);
+}
+
+/** User content columns of a words table, in order (excludes managed columns). */
+export function contentColumns(headers: string[]): string[] {
+  return headers.filter((header) => !isManagedColumn(header));
+}
+
 /** Frontmatter keys owned by the plugin (excluded from the "properties" table). */
 export const PLUGIN_KEYS = new Set(["obsictionary", "preset", "lang", "related"]);
 

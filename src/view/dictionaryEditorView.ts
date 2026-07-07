@@ -8,21 +8,22 @@ import {
   type ViewStateResult,
   type WorkspaceLeaf,
 } from "obsidian";
-import { appendWord, appendWords } from "../commands/dictionaryCommands";
+import { appendWord, appendWords, contentColumnsOf } from "../commands/dictionaryCommands";
 import type ObsictionaryPlugin from "../main";
-import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
+import { contentColumns, DUE_COLUMN } from "../model/dictionary";
+import { sanitizeCell } from "../model/word";
 import {
   readDictionary,
   updateTheory,
   updateWordsTable,
   type DictionaryDoc,
 } from "../obsidian/dictionaryFile";
-import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "../render/blocks";
+import { renderNav, renderPropertiesTable, renderRelatedLinks } from "../render/blocks";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { gatherDue } from "../review/collect";
 import {
-  contentColumnsFor,
   frontColumnFor,
+  isSystemProperty,
   selectProperties,
   SORT_LABELS,
   type SortMode,
@@ -33,11 +34,6 @@ import { ImportWordsModal } from "../ui/importWordsModal";
 import { ReviewModal } from "../ui/reviewModal";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
-
-/** Sanitize a cell value so it stays inside one markdown table cell. */
-function sanitizeCell(value: string): string {
-  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
-}
 
 /** Interactive, Excalidraw-style dictionary editor bound to a markdown file. */
 export class DictionaryEditorView extends ItemView {
@@ -132,8 +128,7 @@ export class DictionaryEditorView extends ItemView {
 
     const headers = doc.table?.headers ?? [];
     const front = frontColumnFor(doc.frontmatter.preset, headers);
-    const contentCols = headers.filter((h) => h !== SRS_COLUMN && h !== DUE_COLUMN);
-    const backCols = contentCols.filter((h) => h !== front);
+    const backCols = contentColumns(headers).filter((h) => h !== front);
 
     this.renderToolbar(root, file, doc);
     this.renderStatsPanel(root, doc, front);
@@ -231,8 +226,7 @@ export class DictionaryEditorView extends ItemView {
     this.toolButton(bar, "play", "Review", () => {
       void this.review(file);
     });
-    const spacer = bar.createDiv({ cls: "obsictionary-view-toolbar-spacer" });
-    spacer.style.flex = "1";
+    bar.createDiv({ cls: "obsictionary-view-toolbar-spacer" });
     this.renderSortControl(bar);
   }
 
@@ -328,7 +322,7 @@ export class DictionaryEditorView extends ItemView {
   private renderMeta(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
     const props = doc.frontmatter.properties;
     const entries = selectProperties(
-      Object.entries(props).filter(([key]) => !NAV_KEYS.has(key)),
+      Object.entries(props).filter(([key]) => !isSystemProperty(key)),
       this.plugin.settings.properties,
     );
     const meta = root.createDiv({ cls: "obsictionary-meta" });
@@ -533,20 +527,14 @@ export class DictionaryEditorView extends ItemView {
     });
   }
 
-  private contentColumns(doc: DictionaryDoc): string[] {
-    return doc.table
-      ? doc.table.headers.filter((h) => h !== SRS_COLUMN && h !== DUE_COLUMN)
-      : contentColumnsFor(doc.frontmatter.preset);
-  }
-
   private promptAdd(file: TFile, doc: DictionaryDoc): void {
-    new AddWordModal(this.app, this.contentColumns(doc), (values) => {
+    new AddWordModal(this.app, contentColumnsOf(doc), (values) => {
       void appendWord(this.app, file, values);
     }).open();
   }
 
   private promptImport(file: TFile, doc: DictionaryDoc): void {
-    new ImportWordsModal(this.app, this.contentColumns(doc), (rows) => {
+    new ImportWordsModal(this.app, contentColumnsOf(doc), (rows) => {
       void appendWords(this.app, file, rows);
     }).open();
   }

@@ -256,6 +256,10 @@ body.obsictionary-hide-status .status-bar {
   gap: var(--size-4-2);
 }
 
+.obsictionary-view-toolbar-spacer {
+  flex: 1;
+}
+
 .obsictionary-tool {
   display: inline-flex;
   align-items: center;
@@ -447,4 +451,11 @@ body.obsictionary-hide-status .status-bar {
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
   margin: var(--size-4-2) 0;
+}
+
+/* Modal validation message */
+.obsictionary-modal-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  margin-top: var(--size-4-2);
 }

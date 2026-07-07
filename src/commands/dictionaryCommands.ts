@@ -1,8 +1,13 @@
 import { Notice, normalizePath, type App, type TFile } from "obsidian";
-import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
+import { contentColumns, DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import { serializeTable, type MarkdownTable } from "../model/table";
-import { readDictionary, updateWordsTable } from "../obsidian/dictionaryFile";
+import { readDictionary, updateWordsTable, type DictionaryDoc } from "../obsidian/dictionaryFile";
 import { contentColumnsFor, type PresetId } from "../settings";
+
+/** Content columns to prompt for when adding words to `doc` (falls back to preset). */
+export function contentColumnsOf(doc: DictionaryDoc): string[] {
+  return doc.table ? contentColumns(doc.table.headers) : contentColumnsFor(doc.frontmatter.preset);
+}
 
 function buildRow(headers: string[], values: Record<string, string>): Record<string, string> {
   const row: Record<string, string> = {};

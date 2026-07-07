@@ -1,6 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { Card } from "ts-fsrs";
-import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
+import { contentColumns, DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import { cardFromCell, dueDateString, encodeCard, isDue } from "../model/srs";
 import { readDictionary, updateWordsTable } from "../obsidian/dictionaryFile";
 import { frontColumnFor } from "../settings";
@@ -27,7 +27,7 @@ export async function gatherDue(app: App, files: TFile[], now: Date): Promise<Re
     if (!doc?.table) continue;
     const { headers, rows } = doc.table;
     const front = frontColumnFor(doc.frontmatter.preset, headers);
-    const contentCols = headers.filter((h) => h !== SRS_COLUMN && h !== DUE_COLUMN);
+    const contentCols = contentColumns(headers);
     const backColumns = contentCols.filter((h) => h !== front);
 
     rows.forEach((row, rowIndex) => {
