@@ -182,7 +182,7 @@ export default class ObsictionaryPlugin extends Plugin {
   private async promptAddWord(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
     if (!doc) return;
-    new AddWordModal(this.app, contentColumnsOf(doc), (values) => {
+    new AddWordModal(this.app, contentColumnsOf(doc), file.path, (values) => {
       void appendWord(this.app, file, values);
     }).open();
   }

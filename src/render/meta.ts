@@ -1,5 +1,5 @@
 import { isForbiddenProperty, selectProperties } from "../settings";
-import { renderPropertiesTable } from "./blocks";
+import { renderProperties } from "./blocks";
 
 /**
  * Render the dictionary header from a note's frontmatter. Forbidden machinery
@@ -13,5 +13,5 @@ export function renderDictionaryMeta(
   allow: string[],
 ): void {
   const entries = Object.entries(frontmatter).filter(([key]) => !isForbiddenProperty(key));
-  renderPropertiesTable(container, selectProperties(entries, allow), sourcePath);
+  renderProperties(container, selectProperties(entries, allow), sourcePath);
 }

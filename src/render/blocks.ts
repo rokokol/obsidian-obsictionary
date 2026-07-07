@@ -60,21 +60,20 @@ function appendValue(container: HTMLElement, value: unknown, sourcePath: string)
 }
 
 /**
- * Compact "properties" table from arbitrary frontmatter entries. Values that are
- * wikilinks or URLs render as clickable links (so `up`, `source`, `related` and
- * plain fields all live in one place).
+ * Compact inline "properties" row from arbitrary frontmatter entries — each is a
+ * `key value` chip that wraps. Wikilink/URL values render as clickable links (so
+ * `up`, `source`, `related` and plain fields all live in one place).
  */
-export function renderPropertiesTable(
+export function renderProperties(
   container: HTMLElement,
   entries: [string, unknown][],
   sourcePath: string,
 ): void {
   if (entries.length === 0) return;
-  const table = container.createEl("table", { cls: "obsictionary-props" });
-  const body = table.createEl("tbody");
+  const list = container.createDiv({ cls: "obsictionary-props" });
   for (const [key, value] of entries) {
-    const row = body.createEl("tr");
-    row.createEl("th", { text: key });
-    appendValue(row.createEl("td"), value, sourcePath);
+    const item = list.createDiv({ cls: "obsictionary-prop" });
+    item.createSpan({ cls: "obsictionary-prop-key", text: key });
+    appendValue(item.createSpan({ cls: "obsictionary-prop-value" }), value, sourcePath);
   }
 }
