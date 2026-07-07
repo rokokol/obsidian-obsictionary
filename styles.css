@@ -239,11 +239,6 @@ body.obsictionary-hide-status .status-bar {
 /* Editable view header title (renames the file) */
 .obsictionary-header-title {
   cursor: text;
-  border-radius: var(--radius-s);
-}
-
-.obsictionary-header-title:hover {
-  background: var(--background-modifier-hover);
 }
 
 /* Interactive dictionary view */
