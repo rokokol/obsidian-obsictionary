@@ -236,6 +236,16 @@ body.obsictionary-hide-status .status-bar {
   display: none;
 }
 
+/* Editable view header title (renames the file) */
+.obsictionary-header-title {
+  cursor: text;
+  border-radius: var(--radius-s);
+}
+
+.obsictionary-header-title:hover {
+  background: var(--background-modifier-hover);
+}
+
 /* Interactive dictionary view */
 .obsictionary-view {
   padding: var(--size-4-4);
