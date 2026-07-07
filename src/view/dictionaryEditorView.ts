@@ -91,11 +91,6 @@ export class DictionaryEditorView extends ItemView {
         if (file.path === this.file?.path) void this.renderView();
       }),
     );
-    this.registerEvent(
-      this.app.vault.on("rename", (file) => {
-        if (file === this.file) void this.renderView();
-      }),
-    );
     return Promise.resolve();
   }
 
@@ -123,7 +118,6 @@ export class DictionaryEditorView extends ItemView {
     const contentCols = headers.filter((h) => h !== SRS_COLUMN && h !== DUE_COLUMN);
     const backCols = contentCols.filter((h) => h !== front);
 
-    this.renderTitle(root, file);
     this.renderToolbar(root, file, doc);
     this.renderStatsPanel(root, doc, front);
     this.renderTheory(root, doc, file);
@@ -143,58 +137,6 @@ export class DictionaryEditorView extends ItemView {
     entries.sort((a, b) => key(a).localeCompare(key(b)));
     if (this.sortMode === "front-desc") entries.reverse();
     return entries;
-  }
-
-  /** Editable inline title that renames the file, mirroring markdown mode. */
-  private renderTitle(root: HTMLElement, file: TFile): void {
-    const title = root.createDiv({
-      cls: "obsictionary-title",
-      text: file.basename,
-      attr: { title: file.path, "aria-label": "Rename" },
-    });
-    title.addEventListener("click", () => {
-      this.beginRename(title, file);
-    });
-  }
-
-  private beginRename(el: HTMLElement, file: TFile): void {
-    el.empty();
-    const input = el.createEl("input", { cls: "obsictionary-title-input", type: "text" });
-    input.value = file.basename;
-    input.focus();
-    input.select();
-
-    let committed = false;
-    const finish = (save: boolean): void => {
-      if (committed) return;
-      committed = true;
-      const next = input.value.trim();
-      if (save && next !== "" && next !== file.basename) void this.rename(file, next);
-      else void this.renderView();
-    };
-    input.addEventListener("blur", () => {
-      finish(true);
-    });
-    input.addEventListener("keydown", (evt) => {
-      if (evt.key === "Enter") {
-        evt.preventDefault();
-        finish(true);
-      } else if (evt.key === "Escape") {
-        evt.preventDefault();
-        finish(false);
-      }
-    });
-  }
-
-  private async rename(file: TFile, basename: string): Promise<void> {
-    const dir = file.parent && file.parent.path !== "/" ? `${file.parent.path}/` : "";
-    const newPath = `${dir}${basename}.${file.extension}`;
-    try {
-      await this.app.fileManager.renameFile(file, newPath);
-    } catch (err) {
-      new Notice(`Rename failed: ${err instanceof Error ? err.message : String(err)}`);
-      void this.renderView();
-    }
   }
 
   private renderToolbar(root: HTMLElement, file: TFile, doc: DictionaryDoc): void {

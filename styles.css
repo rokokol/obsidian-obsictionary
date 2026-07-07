@@ -238,29 +238,6 @@
   overflow-y: auto;
 }
 
-/* Editable inline title (renames the file) */
-.obsictionary-title {
-  font-size: var(--inline-title-size, 1.8em);
-  font-weight: var(--inline-title-weight, var(--font-bold));
-  color: var(--inline-title-color, var(--text-normal));
-  line-height: 1.2;
-  cursor: text;
-  border-radius: var(--radius-s);
-}
-
-.obsictionary-title:hover {
-  background: var(--background-modifier-hover);
-}
-
-.obsictionary-title-input {
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: none;
-  padding: 0;
-}
-
 .obsictionary-view-toolbar {
   display: flex;
   align-items: center;
