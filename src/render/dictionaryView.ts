@@ -5,6 +5,7 @@ import {
   DICTIONARY_FLAG_VALUE,
 } from "../obsidian/dictionaryFile";
 import { frontColumnFor } from "../settings";
+import { renderPropertiesTable, renderRelatedLinks } from "./blocks";
 
 /** Columns never shown as visible dictionary fields. */
 const HIDDEN_COLUMNS = new Set([SRS_COLUMN, DUE_COLUMN]);
@@ -34,40 +35,11 @@ function readHeaders(table: HTMLTableElement): string[] {
   return Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent.trim());
 }
 
-function stringifyValue(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return value.map(stringifyValue).join(", ");
-  if (typeof value === "object") return JSON.stringify(value);
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return typeof value === "string" ? value : "";
-}
-
-interface ParsedWikilink {
-  target: string;
-  display: string;
-}
-
-function parseWikilink(raw: string): ParsedWikilink | null {
-  const match = /^\[\[([^\]]+)\]\]$/.exec(raw.trim());
-  if (!match?.[1]) return null;
-  const inner = match[1];
-  const [target, alias] = inner.split("|");
-  if (!target) return null;
-  return { target: target.trim(), display: (alias ?? target).trim() };
-}
-
 function renderProperties(container: HTMLElement, fm: Record<string, unknown>): void {
   const entries = Object.entries(fm).filter(
     ([key]) => !PLUGIN_KEYS.has(key) && !STANDARD_KEYS.has(key) && key !== "position",
   );
-  if (entries.length === 0) return;
-  const table = container.createEl("table", { cls: "obsictionary-props" });
-  const body = table.createEl("tbody");
-  for (const [key, value] of entries) {
-    const row = body.createEl("tr");
-    row.createEl("th", { text: key });
-    row.createEl("td", { text: stringifyValue(value) });
-  }
+  renderPropertiesTable(container, entries);
 }
 
 function renderRelated(
@@ -77,20 +49,8 @@ function renderRelated(
 ): void {
   const raw = fm["related"];
   const items = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
-  const links = items
-    .filter((v): v is string => typeof v === "string")
-    .map(parseWikilink)
-    .filter((v): v is ParsedWikilink => v !== null);
-  if (links.length === 0) return;
-
-  const wrap = container.createDiv({ cls: "obsictionary-related" });
-  wrap.createSpan({ cls: "obsictionary-related-label", text: "Related:" });
-  for (const link of links) {
-    const a = wrap.createEl("a", { cls: "internal-link", text: link.display });
-    a.dataset["href"] = link.target;
-    a.setAttribute("href", link.target);
-    a.setAttribute("data-source-path", sourcePath);
-  }
+  const rawLinks = items.filter((v): v is string => typeof v === "string");
+  renderRelatedLinks(container, rawLinks, sourcePath);
 }
 
 /**
