@@ -1,10 +1,6 @@
-import type { MarkdownPostProcessorContext } from "obsidian";
+import type { App, MarkdownPostProcessorContext } from "obsidian";
 import { isManagedColumn, SRS_COLUMN } from "../model/dictionary";
-import {
-  DICTIONARY_FLAG,
-  DICTIONARY_FLAG_VALUE,
-  DICTIONARY_TAG,
-} from "../obsidian/dictionaryFile";
+import { DICTIONARY_TAG } from "../obsidian/dictionaryFile";
 import { frontColumnFor } from "../settings";
 import { renderDictionaryMeta } from "./meta";
 
@@ -14,9 +10,8 @@ function getFrontmatter(ctx: MarkdownPostProcessorContext): Record<string, unkno
   return fm as Record<string, unknown>;
 }
 
-/** Reading mode sees only frontmatter, so detect via the tag list or the flag. */
+/** Reading mode sees only frontmatter, so detect via its `tags` list. */
 function isDictionaryFrontmatter(fm: Record<string, unknown>): boolean {
-  if (fm[DICTIONARY_FLAG] === DICTIONARY_FLAG_VALUE) return true;
   const tags = fm["tags"];
   const list = Array.isArray(tags) ? tags : typeof tags === "string" ? [tags] : [];
   return list.some((t) => typeof t === "string" && t.replace(/^#/, "") === DICTIONARY_TAG);
@@ -86,6 +81,7 @@ function moveChildren(from: Element, to: HTMLElement): void {
  * table is transformed.
  */
 export function renderDictionary(
+  app: App,
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
   onReview?: (sourcePath: string) => void,
@@ -115,7 +111,7 @@ export function renderDictionary(
     }
 
     const header = container.createDiv({ cls: "obsictionary-meta" });
-    renderDictionaryMeta(header, fm, ctx.sourcePath, allowProperties);
+    renderDictionaryMeta(header, fm, ctx.sourcePath, allowProperties, app);
     if (!header.hasChildNodes()) header.remove();
     container.appendChild(renderCards(table, headers, front));
     table.replaceWith(container);

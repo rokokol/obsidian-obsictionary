@@ -2,11 +2,8 @@ import { getAllTags, getFrontMatterInfo, type App, type TFile } from "obsidian";
 import { locateWords, PLUGIN_KEYS, replaceTheory, replaceWordsTable } from "../model/dictionary";
 import type { MarkdownTable } from "../model/table";
 
-/** Tag that marks a note as an Obsictionary dictionary (preferred). */
+/** Tag that marks a note as an Obsictionary dictionary. */
 export const DICTIONARY_TAG = "obsictionary";
-/** Legacy frontmatter flag (`obsictionary: dictionary`), still recognised. */
-export const DICTIONARY_FLAG = "obsictionary";
-export const DICTIONARY_FLAG_VALUE = "dictionary";
 
 export interface DictionaryFrontmatter {
   preset: string | null;
@@ -40,15 +37,11 @@ function frontmatterOf(app: App, file: TFile): Record<string, unknown> | null {
   return fm as Record<string, unknown>;
 }
 
-/**
- * Whether a note is an Obsictionary dictionary — carries the `#obsictionary`
- * tag, or the legacy `obsictionary: dictionary` frontmatter flag.
- */
+/** Whether a note is an Obsictionary dictionary — carries the `#obsictionary` tag. */
 export function isDictionaryFile(app: App, file: TFile): boolean {
   const cache = app.metadataCache.getFileCache(file);
   if (!cache) return false;
-  if ((getAllTags(cache) ?? []).includes(`#${DICTIONARY_TAG}`)) return true;
-  return cache.frontmatter?.[DICTIONARY_FLAG] === DICTIONARY_FLAG_VALUE;
+  return (getAllTags(cache) ?? []).includes(`#${DICTIONARY_TAG}`);
 }
 
 /** Read and parse a dictionary note. Returns null if it is not a dictionary. */

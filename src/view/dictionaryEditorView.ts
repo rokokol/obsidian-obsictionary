@@ -298,6 +298,7 @@ export class DictionaryEditorView extends ItemView {
     textarea.value = theory;
     textarea.rows = Math.max(3, theory.split("\n").length + 1);
     textarea.focus();
+    enhanceFieldInput(this.app, textarea, file.path);
 
     const controls = bodyEl.createDiv({ cls: "obsictionary-theory-controls" });
     const save = controls.createEl("button", { cls: "mod-cta", text: "Save" });
@@ -316,7 +317,13 @@ export class DictionaryEditorView extends ItemView {
 
   private renderMeta(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
     const meta = root.createDiv({ cls: "obsictionary-meta" });
-    renderDictionaryMeta(meta, doc.frontmatter.properties, file.path, this.plugin.settings.properties);
+    renderDictionaryMeta(
+      meta,
+      doc.frontmatter.properties,
+      file.path,
+      this.plugin.settings.properties,
+      this.app,
+    );
     if (!meta.hasChildNodes()) meta.remove();
   }
 

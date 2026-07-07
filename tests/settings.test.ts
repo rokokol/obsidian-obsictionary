@@ -7,9 +7,7 @@ describe("sanitizePropertyKeys", () => {
   });
 
   it("drops only forbidden plugin keys", () => {
-    expect(
-      sanitizePropertyKeys("level\nobsictionary\npreset\nsrs\ndue\nposition\nlevel"),
-    ).toEqual(["level"]);
+    expect(sanitizePropertyKeys("level\npreset\nsrs\ndue\nposition\nlevel")).toEqual(["level"]);
   });
 
   it("keeps nav, related and vault keys (now user-manageable)", () => {

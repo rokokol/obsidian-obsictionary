@@ -21,7 +21,7 @@ export function contentColumns(headers: string[]): string[] {
 }
 
 /** Frontmatter keys owned by the plugin (never shown as user "properties"). */
-export const PLUGIN_KEYS = new Set(["obsictionary", "preset"]);
+export const PLUGIN_KEYS = new Set(["preset"]);
 
 export interface WordsLocation {
   /** Markdown before the `## Words` heading — treated as free-form theory. */
