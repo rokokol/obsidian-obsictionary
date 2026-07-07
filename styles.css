@@ -238,14 +238,6 @@
   overflow-y: auto;
 }
 
-/* Clip horizontal overflow on the scroll container itself. Doubled selector
-   (.view-content.obsictionary-view) outranks themes that set overflow-x: auto
-   on .view-content, which otherwise paint a stray horizontal scrollbar thumb
-   (a rounded "pill" under some themes) at the bottom of the view. */
-.view-content.obsictionary-view {
-  overflow-x: hidden;
-}
-
 .obsictionary-view-toolbar {
   display: flex;
   align-items: center;
