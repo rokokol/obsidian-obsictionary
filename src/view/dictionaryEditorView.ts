@@ -77,7 +77,15 @@ export class DictionaryEditorView extends ItemView {
       }
     }
     await super.setState(state, result);
+    this.refreshHeader();
     await this.renderView();
+  }
+
+  /** Ask the leaf to re-read getDisplayText/getIcon so the header title (which
+   *  is drawn once at creation, before the file is set) shows the file name. */
+  private refreshHeader(): void {
+    const leaf = this.leaf as WorkspaceLeaf & { updateHeader?: () => void };
+    leaf.updateHeader?.();
   }
 
   override onOpen(): Promise<void> {
