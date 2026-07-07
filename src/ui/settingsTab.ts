@@ -1,6 +1,12 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import type ObsictionaryPlugin from "../main";
-import { BUILTIN_PRESETS, type PresetId } from "../settings";
+import {
+  BUILTIN_PRESETS,
+  SORT_LABELS,
+  type DefaultView,
+  type PresetId,
+  type SortMode,
+} from "../settings";
 
 export class ObsictionarySettingTab extends PluginSettingTab {
   private readonly plugin: ObsictionaryPlugin;
@@ -24,6 +30,33 @@ export class ObsictionarySettingTab extends PluginSettingTab {
         dropdown.setValue(this.plugin.settings.defaultPreset);
         dropdown.onChange((value) => {
           this.plugin.settings.defaultPreset = value as PresetId;
+          void this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Default view")
+      .setDesc("How dictionary notes open: the interactive view, or plain markdown.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("dictionary", "Interactive dictionary");
+        dropdown.addOption("markdown", "Markdown source");
+        dropdown.setValue(this.plugin.settings.defaultView);
+        dropdown.onChange((value) => {
+          this.plugin.settings.defaultView = value as DefaultView;
+          void this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Default word order")
+      .setDesc("How words are sorted when a dictionary opens.")
+      .addDropdown((dropdown) => {
+        for (const [mode, label] of Object.entries(SORT_LABELS)) {
+          dropdown.addOption(mode, label);
+        }
+        dropdown.setValue(this.plugin.settings.defaultSort);
+        dropdown.onChange((value) => {
+          this.plugin.settings.defaultSort = value as SortMode;
           void this.plugin.saveSettings();
         });
       });

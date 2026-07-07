@@ -236,8 +236,13 @@
   flex-direction: column;
   gap: var(--size-4-4);
   overflow-y: auto;
-  /* Clip horizontal overflow: with overflow-y set, overflow-x computes to auto,
-     which otherwise shows a stray horizontal scrollbar thumb at the bottom. */
+}
+
+/* Clip horizontal overflow on the scroll container itself. Doubled selector
+   (.view-content.obsictionary-view) outranks themes that set overflow-x: auto
+   on .view-content, which otherwise paint a stray horizontal scrollbar thumb
+   (a rounded "pill" under some themes) at the bottom of the view. */
+.view-content.obsictionary-view {
   overflow-x: hidden;
 }
 
@@ -267,6 +272,18 @@
   color: var(--text-faint);
   text-align: center;
   padding: var(--size-4-6) 0;
+}
+
+/* Sort control */
+.obsictionary-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  color: var(--text-muted);
+}
+
+.obsictionary-sort-select {
+  font-size: var(--font-ui-small);
 }
 
 .obsictionary-card-editable {

@@ -19,7 +19,7 @@ import {
 import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "../render/blocks";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { gatherDue } from "../review/collect";
-import { contentColumnsFor, frontColumnFor } from "../settings";
+import { contentColumnsFor, frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
 import { AddWordModal } from "../ui/addWordModal";
 import { ConfirmModal } from "../ui/confirmModal";
 import { ImportWordsModal } from "../ui/importWordsModal";
@@ -37,10 +37,12 @@ export class DictionaryEditorView extends ItemView {
   private readonly plugin: ObsictionaryPlugin;
   private file: TFile | null = null;
   private dragIndex: number | null = null;
+  private sortMode: SortMode;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsictionaryPlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.sortMode = plugin.settings.defaultSort;
     this.navigation = true;
   }
 
@@ -120,7 +122,21 @@ export class DictionaryEditorView extends ItemView {
     this.renderStatsPanel(root, doc, front);
     this.renderTheory(root, doc, file);
     this.renderMeta(root, doc, file);
-    this.renderWords(root, file, doc, front, backCols);
+    this.renderWords(root, file, this.orderedRows(doc, front), front, backCols);
+  }
+
+  /** Rows paired with their real table index, in the current sort order. */
+  private orderedRows(
+    doc: DictionaryDoc,
+    front: string,
+  ): { row: Record<string, string>; index: number }[] {
+    const entries = (doc.table?.rows ?? []).map((row, index) => ({ row, index }));
+    if (this.sortMode === "manual") return entries;
+    const col = this.sortMode === "due-asc" ? DUE_COLUMN : front;
+    const key = (e: { row: Record<string, string> }): string => (e.row[col] ?? "").trim();
+    entries.sort((a, b) => key(a).localeCompare(key(b)));
+    if (this.sortMode === "front-desc") entries.reverse();
+    return entries;
   }
 
   private renderToolbar(root: HTMLElement, file: TFile, doc: DictionaryDoc): void {
@@ -134,10 +150,26 @@ export class DictionaryEditorView extends ItemView {
     this.toolButton(bar, "play", "Review", () => {
       void this.review(file);
     });
+    this.renderSortControl(bar);
     const spacer = bar.createDiv({ cls: "obsictionary-view-toolbar-spacer" });
     spacer.style.flex = "1";
     this.toolButton(bar, "file-code", "Open as markdown", () => {
       void this.plugin.openAsMarkdown(file, this.leaf);
+    });
+  }
+
+  private renderSortControl(bar: HTMLElement): void {
+    const wrap = bar.createDiv({ cls: "obsictionary-sort" });
+    const icon = wrap.createSpan({ cls: "obsictionary-tool-icon" });
+    setIcon(icon, "arrow-up-down");
+    const select = wrap.createEl("select", { cls: "dropdown obsictionary-sort-select" });
+    for (const [mode, label] of Object.entries(SORT_LABELS)) {
+      select.createEl("option", { value: mode, text: label });
+    }
+    select.value = this.sortMode;
+    select.addEventListener("change", () => {
+      this.sortMode = select.value as SortMode;
+      void this.renderView();
     });
   }
 
@@ -221,43 +253,46 @@ export class DictionaryEditorView extends ItemView {
   private renderWords(
     root: HTMLElement,
     file: TFile,
-    doc: DictionaryDoc,
+    entries: { row: Record<string, string>; index: number }[],
     front: string,
     backCols: string[],
   ): void {
     const list = root.createDiv({ cls: "obsictionary-cards" });
-    if (!doc.table || doc.table.rows.length === 0) {
+    if (entries.length === 0) {
       list.createDiv({
         cls: "obsictionary-view-empty",
         text: 'No words yet — use "Add word".',
       });
       return;
     }
+    const canReorder = this.sortMode === "manual";
 
-    doc.table.rows.forEach((row, rowIndex) => {
+    entries.forEach(({ row, index: rowIndex }) => {
       if ((row[front] ?? "").trim() === "") return;
       const card = list.createDiv({ cls: "obsictionary-card obsictionary-card-editable" });
-      this.attachDragTarget(card, file, rowIndex);
+      if (canReorder) this.attachDragTarget(card, file, rowIndex);
 
-      const handle = card.createDiv({
-        cls: "obsictionary-card-handle",
-        attr: { "aria-label": "Drag to reorder", draggable: "true" },
-      });
-      setIcon(handle, "grip-vertical");
-      handle.addEventListener("dragstart", (evt) => {
-        this.dragIndex = rowIndex;
-        card.addClass("is-dragging");
-        evt.dataTransfer?.setData("text/plain", rowIndex.toString());
-        if (evt.dataTransfer) evt.dataTransfer.effectAllowed = "move";
-      });
-      handle.addEventListener("dragend", () => {
-        this.dragIndex = null;
-        card.removeClass("is-dragging");
-        list.findAll(".drop-before, .drop-after").forEach((el) => {
-          el.removeClass("drop-before");
-          el.removeClass("drop-after");
+      if (canReorder) {
+        const handle = card.createDiv({
+          cls: "obsictionary-card-handle",
+          attr: { "aria-label": "Drag to reorder", draggable: "true" },
         });
-      });
+        setIcon(handle, "grip-vertical");
+        handle.addEventListener("dragstart", (evt) => {
+          this.dragIndex = rowIndex;
+          card.addClass("is-dragging");
+          evt.dataTransfer?.setData("text/plain", rowIndex.toString());
+          if (evt.dataTransfer) evt.dataTransfer.effectAllowed = "move";
+        });
+        handle.addEventListener("dragend", () => {
+          this.dragIndex = null;
+          card.removeClass("is-dragging");
+          list.findAll(".drop-before, .drop-after").forEach((el) => {
+            el.removeClass("drop-before");
+            el.removeClass("drop-after");
+          });
+        });
+      }
 
       const del = card.createEl("button", {
         cls: "obsictionary-card-delete",
