@@ -229,6 +229,13 @@
   font-size: var(--font-ui-small);
 }
 
+/* While a dictionary view is active there is no editor, so Obsidian's status
+   bar is empty; some themes render the empty bar as a stray floating pill.
+   Hide it — the class is toggled on <body> from the plugin. */
+body.obsictionary-active .status-bar {
+  display: none;
+}
+
 /* Interactive dictionary view */
 .obsictionary-view {
   padding: var(--size-4-4);
