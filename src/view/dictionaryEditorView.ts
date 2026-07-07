@@ -19,7 +19,13 @@ import {
 import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "../render/blocks";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { gatherDue } from "../review/collect";
-import { contentColumnsFor, frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
+import {
+  contentColumnsFor,
+  frontColumnFor,
+  selectProperties,
+  SORT_LABELS,
+  type SortMode,
+} from "../settings";
 import { AddWordModal } from "../ui/addWordModal";
 import { ConfirmModal } from "../ui/confirmModal";
 import { ImportWordsModal } from "../ui/importWordsModal";
@@ -60,6 +66,11 @@ export class DictionaryEditorView extends ItemView {
 
   getFile(): TFile | null {
     return this.file;
+  }
+
+  /** Re-render, e.g. after settings change. */
+  refresh(): void {
+    void this.renderView();
   }
 
   override getState(): Record<string, unknown> {
@@ -250,7 +261,10 @@ export class DictionaryEditorView extends ItemView {
 
   private renderMeta(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
     const props = doc.frontmatter.properties;
-    const entries = Object.entries(props).filter(([key]) => !NAV_KEYS.has(key));
+    const entries = selectProperties(
+      Object.entries(props).filter(([key]) => !NAV_KEYS.has(key)),
+      this.plugin.settings.properties,
+    );
     const meta = root.createDiv({ cls: "obsictionary-meta" });
     renderNav(meta, props, file.path);
     renderPropertiesTable(meta, entries);

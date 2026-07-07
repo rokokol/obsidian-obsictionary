@@ -59,9 +59,14 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.registerMarkdownPostProcessor((el, ctx) => {
-      renderDictionary(el, ctx, (sourcePath) => {
-        void this.reviewByPath(sourcePath);
-      });
+      renderDictionary(
+        el,
+        ctx,
+        (sourcePath) => {
+          void this.reviewByPath(sourcePath);
+        },
+        this.settings.properties,
+      );
     });
 
     this.registerMarkdownCodeBlockProcessor("obsictionary-stats", (source, el, ctx) => {
@@ -293,6 +298,13 @@ export default class ObsictionaryPlugin extends Plugin {
       return;
     }
     new ReviewModal(this.app, items, this.settings.fsrsRetention).open();
+  }
+
+  /** Re-render every open dictionary view (after a settings change). */
+  refreshDictionaryViews(): void {
+    this.app.workspace.getLeavesOfType(DICTIONARY_VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof DictionaryEditorView) leaf.view.refresh();
+    });
   }
 
   override onunload(): void {

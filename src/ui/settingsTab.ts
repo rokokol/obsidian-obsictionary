@@ -2,6 +2,7 @@ import { PluginSettingTab, Setting, type App } from "obsidian";
 import type ObsictionaryPlugin from "../main";
 import {
   BUILTIN_PRESETS,
+  sanitizePropertyKeys,
   SORT_LABELS,
   type DefaultView,
   type PresetId,
@@ -72,6 +73,28 @@ export class ObsictionarySettingTab extends PluginSettingTab {
             this.plugin.settings.fsrsRetention = value;
             void this.plugin.saveSettings();
           });
+      });
+
+    new Setting(containerEl)
+      .setName("Displayed properties")
+      .setDesc(
+        "Frontmatter keys shown in the dictionary header, one per line (or " +
+          "comma-separated), in this order. Leave empty to show every property. " +
+          "System keys (obsictionary, preset, related, tags, up/prev/next/source, " +
+          "srs, due, …) are ignored.",
+      )
+      .addTextArea((text) => {
+        text.inputEl.rows = 4;
+        text.setPlaceholder("level\nsource");
+        text.setValue(this.plugin.settings.properties.join("\n"));
+        const commit = (): void => {
+          const keys = sanitizePropertyKeys(text.getValue());
+          this.plugin.settings.properties = keys;
+          text.setValue(keys.join("\n"));
+          void this.plugin.saveSettings();
+          this.plugin.refreshDictionaryViews();
+        };
+        text.inputEl.addEventListener("blur", commit);
       });
 
     new Setting(containerEl)

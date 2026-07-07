@@ -1,4 +1,5 @@
-import { DUE_COLUMN, SRS_COLUMN } from "./model/dictionary";
+import { DUE_COLUMN, PLUGIN_KEYS, SRS_COLUMN, STANDARD_KEYS } from "./model/dictionary";
+import { NAV_KEYS } from "./render/blocks";
 
 /** Built-in preset identifiers. Users may reference custom presets by name too. */
 export type PresetId = "word-meaning" | "word-transcription-translation";
@@ -70,6 +71,11 @@ export interface ObsictionarySettings {
   defaultView: DefaultView;
   /** Default word ordering in the interactive view. */
   defaultSort: SortMode;
+  /**
+   * Frontmatter keys to render in the dictionary "properties" block, in order.
+   * Empty = show every non-system property (the original behavior).
+   */
+  properties: string[];
 }
 
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
@@ -78,4 +84,52 @@ export const DEFAULT_SETTINGS: ObsictionarySettings = {
   reviewScope: "note",
   defaultView: "dictionary",
   defaultSort: "manual",
+  properties: [],
 };
+
+/**
+ * Keys owned by the plugin or the vault that must never be shown as user
+ * "properties" — the properties setting rejects these.
+ */
+export const SYSTEM_PROPERTY_KEYS: ReadonlySet<string> = new Set<string>([
+  ...PLUGIN_KEYS,
+  ...STANDARD_KEYS,
+  ...NAV_KEYS,
+  SRS_COLUMN,
+  DUE_COLUMN,
+  "position",
+]);
+
+export function isSystemProperty(key: string): boolean {
+  return SYSTEM_PROPERTY_KEYS.has(key);
+}
+
+/** Parse a user-typed list (commas/newlines) into clean, non-system keys. */
+export function sanitizePropertyKeys(input: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input.split(/[\n,]/)) {
+    const key = raw.trim();
+    if (key === "" || isSystemProperty(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+/**
+ * Pick the frontmatter entries to display. `allow` is the configured order;
+ * empty means "show all". System keys are already excluded from `entries`.
+ */
+export function selectProperties(
+  entries: [string, unknown][],
+  allow: string[],
+): [string, unknown][] {
+  if (allow.length === 0) return entries;
+  const byKey = new Map<string, unknown>(entries);
+  const out: [string, unknown][] = [];
+  for (const key of allow) {
+    if (byKey.has(key)) out.push([key, byKey.get(key)]);
+  }
+  return out;
+}
