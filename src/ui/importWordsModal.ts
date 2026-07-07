@@ -22,7 +22,7 @@ export class ImportWordsModal extends Modal {
     contentEl.createEl("h3", { text: "Import words" });
     contentEl.createEl("p", {
       cls: "obsictionary-import-hint",
-      text: `One word per line. Columns: ${this.columns.join(" / ")} — separated by Tab, | or ;`,
+      text: `One word per line. Columns: ${this.columns.join(" / ")} — separated by | or ;`,
     });
 
     const textarea = contentEl.createEl("textarea", { cls: "obsictionary-import-input" });

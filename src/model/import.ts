@@ -10,16 +10,17 @@ export interface ImportResult {
   incomplete: number;
 }
 
-/** Split a line by the first present separator: tab, pipe, or semicolon. */
+/** Split a line by the first present separator: pipe or semicolon. */
 function splitLine(line: string): string[] {
-  for (const sep of ["\t", "|", ";"]) {
+  for (const sep of ["|", ";"]) {
     if (line.includes(sep)) return line.split(sep).map((cell) => cell.trim());
   }
   return [line.trim()];
 }
 
 /**
- * Turn multi-line pasted text into rows keyed by `columns` (in order). Blank
+ * Turn multi-line pasted text into rows keyed by `columns` (in order, columns
+ * separated by `|` or `;`). Blank
  * lines are ignored; a non-blank line missing any column value is counted as
  * incomplete and skipped, so no partial word is ever added. Extra cells are
  * dropped; cell values are sanitized to survive a single markdown table cell.
