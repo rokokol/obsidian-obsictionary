@@ -4,7 +4,7 @@ import {
   DICTIONARY_FLAG,
   DICTIONARY_FLAG_VALUE,
 } from "../obsidian/dictionaryFile";
-import { frontColumnFor } from "../settings";
+import { frontColumnFor, selectProperties } from "../settings";
 import { NAV_KEYS, renderNav, renderPropertiesTable, renderRelatedLinks } from "./blocks";
 
 /** Columns never shown as visible dictionary fields. */
@@ -35,7 +35,11 @@ function readHeaders(table: HTMLTableElement): string[] {
   return Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent.trim());
 }
 
-function renderProperties(container: HTMLElement, fm: Record<string, unknown>): void {
+function renderProperties(
+  container: HTMLElement,
+  fm: Record<string, unknown>,
+  allow: string[],
+): void {
   const entries = Object.entries(fm).filter(
     ([key]) =>
       !PLUGIN_KEYS.has(key) &&
@@ -43,7 +47,7 @@ function renderProperties(container: HTMLElement, fm: Record<string, unknown>): 
       !NAV_KEYS.has(key) &&
       key !== "position",
   );
-  renderPropertiesTable(container, entries);
+  renderPropertiesTable(container, selectProperties(entries, allow));
 }
 
 function renderRelated(
@@ -109,6 +113,7 @@ export function renderDictionary(
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
   onReview?: (sourcePath: string) => void,
+  allowProperties: string[] = [],
 ): void {
   const fm = getFrontmatter(ctx);
   if (!fm || !isDictionaryFrontmatter(fm)) return;
@@ -135,7 +140,7 @@ export function renderDictionary(
 
     const header = container.createDiv({ cls: "obsictionary-meta" });
     renderNav(header, fm, ctx.sourcePath);
-    renderProperties(header, fm);
+    renderProperties(header, fm, allowProperties);
     renderRelated(header, fm, ctx.sourcePath);
     if (!header.hasChildNodes()) header.remove();
     container.appendChild(renderCards(table, headers, front));
