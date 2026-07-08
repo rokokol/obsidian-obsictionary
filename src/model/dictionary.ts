@@ -1,5 +1,5 @@
 import { decodeCard } from "./srs";
-import { parseTable, serializeTable, type MarkdownTable } from "./table";
+import { isDelimiterRow, parseTable, serializeTable, type MarkdownTable } from "./table";
 
 /** Heading that marks the start of the words table inside a dictionary note. */
 export const WORDS_HEADING_RE = /^#{1,6}\s+Words\s*$/i;
@@ -99,17 +99,6 @@ function findWordsHeading(lines: string[]): number {
   return lines.findIndex((line) => WORDS_HEADING_RE.test(line));
 }
 
-function isDelimiter(line: string | undefined): boolean {
-  if (!line?.includes("|")) return false;
-  const cells = line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((c) => c.trim());
-  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
-}
-
 /**
  * Locate the words table within a note body (frontmatter already stripped).
  * Theory is everything before the `## Words` heading.
@@ -123,13 +112,14 @@ export function locateWords(body: string): WordsLocation {
 
   const theory = lines.slice(0, headingIdx).join("\n");
 
-  // Find the table header line after the heading (skip blanks).
+  // The first non-blank line after the heading must be the table header
+  // (followed by a delimiter row); anything else means there is no table.
   let start = -1;
   for (let i = headingIdx + 1; i < lines.length - 1; i++) {
     const line = lines[i];
-    if (line === undefined) continue;
-    if (line.trim() === "") continue;
-    if (line.includes("|") && isDelimiter(lines[i + 1])) {
+    const next = lines[i + 1];
+    if (line === undefined || line.trim() === "") continue;
+    if (line.includes("|") && next !== undefined && isDelimiterRow(next)) {
       start = i;
     }
     break;
@@ -155,7 +145,7 @@ export function locateWords(body: string): WordsLocation {
  */
 export function replaceTheory(body: string, theory: string): string {
   const lines = body.split("\n");
-  const idx = lines.findIndex((line) => WORDS_HEADING_RE.test(line));
+  const idx = findWordsHeading(lines);
   const trimmed = theory.replace(/\s+$/, "");
   if (idx === -1) {
     return trimmed === "" ? "" : `${trimmed}\n`;

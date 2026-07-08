@@ -1,4 +1,5 @@
 import { Notice, type App } from "obsidian";
+import { errorMessage } from "../util";
 
 type TextField = HTMLInputElement | HTMLTextAreaElement;
 
@@ -17,7 +18,12 @@ function fallbackName(file: File): string {
   return `Pasted ${Date.now().toString()}.${ext}`;
 }
 
-async function saveAndEmbed(app: App, el: TextField, sourcePath: string, file: File): Promise<void> {
+async function saveAndEmbed(
+  app: App,
+  el: TextField,
+  sourcePath: string,
+  file: File,
+): Promise<void> {
   const name = file.name.trim() === "" ? fallbackName(file) : file.name;
   const path = await app.fileManager.getAvailablePathForAttachment(name, sourcePath);
   const saved = await app.vault.createBinary(path, await file.arrayBuffer());
@@ -38,7 +44,7 @@ export function enableAttachmentPaste(app: App, el: TextField, sourcePath: strin
       try {
         for (const file of Array.from(files)) await saveAndEmbed(app, el, sourcePath, file);
       } catch (err) {
-        new Notice(`Attachment failed: ${err instanceof Error ? err.message : String(err)}`);
+        new Notice(`Attachment failed: ${errorMessage(err)}`);
       }
     })();
   });

@@ -52,8 +52,9 @@ function escapeCell(value: string): string {
   return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 }
 
-/** A GFM delimiter row like `| --- | :--: |`. */
-function isDelimiterRow(line: string): boolean {
+/** A GFM delimiter row like `| --- | :--: |` (a pipe is required, so a plain `---` rule doesn't match). */
+export function isDelimiterRow(line: string): boolean {
+  if (!line.includes("|")) return false;
   const cells = splitRow(line);
   return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
 }

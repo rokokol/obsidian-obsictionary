@@ -1,11 +1,4 @@
-import {
-  createEmptyCard,
-  fsrs,
-  generatorParameters,
-  Rating,
-  type Card,
-  type Grade,
-} from "ts-fsrs";
+import { createEmptyCard, fsrs, generatorParameters, Rating, type Card, type Grade } from "ts-fsrs";
 
 /** The four review grades exposed in the UI. */
 export type ReviewRating = "again" | "hard" | "good" | "easy";
@@ -133,12 +126,9 @@ export function previewDueDates(
   now: Date = new Date(),
 ): Record<ReviewRating, Date> {
   const f = scheduler(retention);
-  return {
-    again: f.next(card, now, GRADE.again).card.due,
-    hard: f.next(card, now, GRADE.hard).card.due,
-    good: f.next(card, now, GRADE.good).card.due,
-    easy: f.next(card, now, GRADE.easy).card.due,
-  };
+  return Object.fromEntries(
+    REVIEW_RATINGS.map((rating) => [rating, f.next(card, now, GRADE[rating]).card.due]),
+  ) as Record<ReviewRating, Date>;
 }
 
 /** Whether the card is due for review at `now`. */

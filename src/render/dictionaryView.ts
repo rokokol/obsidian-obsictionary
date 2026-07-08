@@ -31,11 +31,7 @@ function readHeaders(table: HTMLTableElement): string[] {
  * Obsidian-rendered embeds/audio/images) is moved into the new layout, so
  * attachments keep working.
  */
-function renderCards(
-  table: HTMLTableElement,
-  headers: string[],
-  front: string,
-): HTMLElement {
+function renderCards(table: HTMLTableElement, headers: string[], front: string): HTMLElement {
   const list = createDiv({ cls: "obsictionary-cards" });
   const backColumns = headers.filter((h) => h !== front && !isManagedColumn(h));
 
@@ -103,9 +99,7 @@ export function renderDictionary(
       });
     }
 
-    const header = container.createDiv({ cls: "obsictionary-meta" });
-    renderDictionaryMeta(header, fm, ctx.sourcePath, allowProperties);
-    if (!header.hasChildNodes()) header.remove();
+    renderDictionaryMeta(container, fm, ctx.sourcePath, allowProperties);
     container.appendChild(renderCards(table, headers, front));
     table.replaceWith(container);
   }

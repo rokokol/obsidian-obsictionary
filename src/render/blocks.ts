@@ -27,7 +27,11 @@ function toStringArray(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
-function appendInternalLink(container: HTMLElement, link: ParsedWikilink, sourcePath: string): void {
+function appendInternalLink(
+  container: HTMLElement,
+  link: ParsedWikilink,
+  sourcePath: string,
+): void {
   const a = container.createEl("a", { cls: "internal-link", text: link.display });
   a.dataset["href"] = link.target;
   a.setAttribute("href", link.target);

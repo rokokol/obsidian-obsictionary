@@ -9,7 +9,6 @@ import {
   type ViewStateResult,
   type WorkspaceLeaf,
 } from "obsidian";
-import { appendWord, appendWords, contentColumnsOf } from "../commands/dictionaryCommands";
 import type ObsictionaryPlugin from "../main";
 import {
   contentColumns,
@@ -30,12 +29,10 @@ import { enhanceFieldInput } from "../obsidian/fieldInput";
 import { renderCellValue } from "../render/cellValue";
 import { renderDictionaryMeta } from "../render/meta";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
-import { gatherDue } from "../review/collect";
 import { frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
-import { AddWordModal } from "../ui/addWordModal";
 import { ConfirmModal } from "../ui/confirmModal";
-import { ImportWordsModal } from "../ui/importWordsModal";
-import { ReviewModal } from "../ui/reviewModal";
+import { promptAddWord, promptImportWords, startReviewSession } from "../ui/prompts";
+import { errorMessage } from "../util";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
 
@@ -48,6 +45,40 @@ function describeNormalize(summary: NormalizeSummary): string {
   }
   if (summary.clearedSrs > 0) parts.push(`reset ${summary.clearedSrs} invalid card(s)`);
   return `Cleaned up dictionary: ${parts.join(", ")}.`;
+}
+
+/** Remove every drop-position indicator inside `container`. */
+function clearDropMarkers(container: HTMLElement): void {
+  container.findAll(".drop-before, .drop-after").forEach((el) => {
+    el.removeClass("drop-before");
+    el.removeClass("drop-after");
+  });
+}
+
+/**
+ * Wire the inline-edit commit gestures onto `el`: blur and Enter finish with
+ * save, Escape finishes without. `onFinish` runs exactly once (blur fires
+ * again when the element is torn down).
+ */
+function bindCommitHandlers(el: HTMLElement, onFinish: (save: boolean) => void): void {
+  let committed = false;
+  const finish = (save: boolean): void => {
+    if (committed) return;
+    committed = true;
+    onFinish(save);
+  };
+  el.addEventListener("blur", () => {
+    finish(true);
+  });
+  el.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter") {
+      evt.preventDefault();
+      finish(true);
+    } else if (evt.key === "Escape") {
+      evt.preventDefault();
+      finish(false);
+    }
+  });
 }
 
 /** Interactive, Excalidraw-style dictionary editor bound to a markdown file. */
@@ -158,7 +189,7 @@ export class DictionaryEditorView extends ItemView {
     try {
       doc = await readDictionary(this.app, file);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       new Notice(`Failed to read dictionary: ${msg}`);
       root.createDiv({ cls: "obsictionary-view-empty", text: `Failed to read dictionary: ${msg}` });
       return;
@@ -179,8 +210,7 @@ export class DictionaryEditorView extends ItemView {
       void updateWordsTable(this.app, file, (table) => {
         normalizeWords(table);
       }).catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        new Notice(`Failed to clean up srs/due in dictionary: ${msg}`);
+        new Notice(`Failed to clean up srs/due in dictionary: ${errorMessage(err)}`);
       });
     }
 
@@ -191,7 +221,12 @@ export class DictionaryEditorView extends ItemView {
     this.renderToolbar(root, file, doc);
     this.renderStatsPanel(root, doc, front);
     this.renderTheory(root, doc, file);
-    this.renderMeta(root, doc, file);
+    renderDictionaryMeta(
+      root,
+      doc.frontmatter.properties,
+      file.path,
+      this.plugin.settings.properties,
+    );
     this.renderWords(root, file, this.orderedRows(doc, front), front, backCols);
   }
 
@@ -239,26 +274,11 @@ export class DictionaryEditorView extends ItemView {
     sel?.removeAllRanges();
     sel?.addRange(range);
 
-    let committed = false;
-    const finish = (save: boolean): void => {
-      if (committed) return;
-      committed = true;
+    bindCommitHandlers(el, (save) => {
       el.removeAttribute("contenteditable");
       const next = el.textContent.trim();
       if (save && next !== "" && next !== file.basename) void this.rename(file, next);
       else el.setText(file.basename);
-    };
-    el.addEventListener("blur", () => {
-      finish(true);
-    });
-    el.addEventListener("keydown", (evt) => {
-      if (evt.key === "Enter") {
-        evt.preventDefault();
-        finish(true);
-      } else if (evt.key === "Escape") {
-        evt.preventDefault();
-        finish(false);
-      }
     });
   }
 
@@ -268,7 +288,7 @@ export class DictionaryEditorView extends ItemView {
     try {
       await this.app.fileManager.renameFile(file, newPath);
     } catch (err) {
-      new Notice(`Rename failed: ${err instanceof Error ? err.message : String(err)}`);
+      new Notice(`Rename failed: ${errorMessage(err)}`);
       void this.renderView();
     }
   }
@@ -289,11 +309,7 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private renderSortControl(bar: HTMLElement): void {
-    const btn = bar.createEl("button", { cls: "obsictionary-tool" });
-    const iconEl = btn.createSpan({ cls: "obsictionary-tool-icon" });
-    setIcon(iconEl, "arrow-up-down");
-    btn.createSpan({ text: SORT_LABELS[this.sortMode] });
-    btn.addEventListener("click", (evt) => {
+    this.toolButton(bar, "arrow-up-down", SORT_LABELS[this.sortMode], (evt) => {
       const menu = new Menu();
       for (const [mode, label] of Object.entries(SORT_LABELS)) {
         menu.addItem((item) => {
@@ -314,7 +330,7 @@ export class DictionaryEditorView extends ItemView {
     bar: HTMLElement,
     icon: string,
     label: string,
-    onClick: () => void,
+    onClick: (evt: MouseEvent) => void,
   ): void {
     const btn = bar.createEl("button", { cls: "obsictionary-tool" });
     const iconEl = btn.createSpan({ cls: "obsictionary-tool-icon" });
@@ -367,21 +383,11 @@ export class DictionaryEditorView extends ItemView {
     const save = controls.createEl("button", { cls: "mod-cta", text: "Save" });
     const cancel = controls.createEl("button", { text: "Cancel" });
     save.addEventListener("click", () => {
-      void this.saveTheory(file, textarea.value);
+      void updateTheory(this.app, file, textarea.value);
     });
     cancel.addEventListener("click", () => {
       void this.renderView();
     });
-  }
-
-  private async saveTheory(file: TFile, theory: string): Promise<void> {
-    await updateTheory(this.app, file, theory);
-  }
-
-  private renderMeta(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
-    const meta = root.createDiv({ cls: "obsictionary-meta" });
-    renderDictionaryMeta(meta, doc.frontmatter.properties, file.path, this.plugin.settings.properties);
-    if (!meta.hasChildNodes()) meta.remove();
   }
 
   private renderWords(
@@ -421,10 +427,7 @@ export class DictionaryEditorView extends ItemView {
         handle.addEventListener("dragend", () => {
           this.dragIndex = null;
           card.removeClass("is-dragging");
-          list.findAll(".drop-before, .drop-after").forEach((el) => {
-            el.removeClass("drop-before");
-            el.removeClass("drop-after");
-          });
+          clearDropMarkers(list);
         });
       }
 
@@ -491,10 +494,7 @@ export class DictionaryEditorView extends ItemView {
     input.select();
     enhanceFieldInput(this.app, input, file.path);
 
-    let committed = false;
-    const finish = (save: boolean): void => {
-      if (committed) return;
-      committed = true;
+    bindCommitHandlers(input, (save) => {
       const next = sanitizeCell(input.value);
       // Clearing a field would orphan the row (a blank front hides the card),
       // so an empty edit reverts to the previous value instead of saving.
@@ -502,18 +502,6 @@ export class DictionaryEditorView extends ItemView {
         void this.editCell(file, rowIndex, column, next);
       } else {
         this.renderEditable(el, file, rowIndex, column, value);
-      }
-    };
-    input.addEventListener("blur", () => {
-      finish(true);
-    });
-    input.addEventListener("keydown", (evt) => {
-      if (evt.key === "Enter") {
-        evt.preventDefault();
-        finish(true);
-      } else if (evt.key === "Escape") {
-        evt.preventDefault();
-        finish(false);
       }
     });
   }
@@ -552,10 +540,7 @@ export class DictionaryEditorView extends ItemView {
       // No-op when the indicator is already correct — avoids repaint flicker as
       // the pointer moves across the card's children (which fire dragenter).
       if (card.hasClass(after ? "drop-after" : "drop-before")) return;
-      card.parentElement?.findAll(".drop-before, .drop-after").forEach((el) => {
-        el.removeClass("drop-before");
-        el.removeClass("drop-after");
-      });
+      if (card.parentElement) clearDropMarkers(card.parentElement);
       card.toggleClass("drop-after", after);
       card.toggleClass("drop-before", !after);
     });
@@ -583,25 +568,14 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private promptAdd(file: TFile, doc: DictionaryDoc): void {
-    const columns = contentColumnsOf(doc, this.plugin.settings.newDictionaryColumns);
-    new AddWordModal(this.app, columns, file.path, (values) => {
-      void appendWord(this.app, file, values);
-    }).open();
+    promptAddWord(this.app, file, doc, this.plugin.settings.newDictionaryColumns);
   }
 
   private promptImport(file: TFile, doc: DictionaryDoc): void {
-    const columns = contentColumnsOf(doc, this.plugin.settings.newDictionaryColumns);
-    new ImportWordsModal(this.app, columns, (rows) => {
-      void appendWords(this.app, file, rows);
-    }).open();
+    promptImportWords(this.app, file, doc, this.plugin.settings.newDictionaryColumns);
   }
 
   private async review(file: TFile): Promise<void> {
-    const items = await gatherDue(this.app, [file], new Date());
-    if (items.length === 0) {
-      new Notice("No cards due for review.");
-      return;
-    }
-    new ReviewModal(this.app, items, this.plugin.settings.fsrsRetention).open();
+    await startReviewSession(this.app, [file], this.plugin.settings.fsrsRetention);
   }
 }
