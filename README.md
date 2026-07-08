@@ -91,6 +91,12 @@ npm run build             # production build
 The build copies `main.js`, `manifest.json` and `styles.css` into the folder named
 by `OBSIDIAN_PLUGIN_DIR`.
 
+## Roadmap
+
+- [ ] Notify-reminders
+- [ ] Inline hints in other files
+- [ ] Translate the plugin to multiple languages
+
 ## License
 
 MIT
