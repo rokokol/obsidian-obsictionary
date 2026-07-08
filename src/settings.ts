@@ -8,17 +8,22 @@ export function frontColumnFor(headers: string[]): string {
   return headers.find((h) => !isManagedColumn(h)) ?? headers[0] ?? "";
 }
 
-/** Parse a user-typed column list (commas/newlines) into clean content columns. */
-export function sanitizeColumns(input: string): string[] {
+/** Split a user-typed list (commas/newlines) into trimmed, deduped keys. */
+function parseKeyList(input: string, reject?: (key: string) => boolean): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of input.split(/[\n,]/)) {
     const key = raw.trim();
-    if (key === "" || isManagedColumn(key) || seen.has(key)) continue;
+    if (key === "" || seen.has(key) || reject?.(key)) continue;
     seen.add(key);
     out.push(key);
   }
   return out;
+}
+
+/** Parse a user-typed column list (commas/newlines) into clean content columns. */
+export function sanitizeColumns(input: string): string[] {
+  return parseKeyList(input, isManagedColumn);
 }
 
 /** How a dictionary note opens by default. */
@@ -64,15 +69,7 @@ export const DEFAULT_SETTINGS: ObsictionarySettings = {
 
 /** Parse a user-typed list (commas/newlines) into a clean, deduped key list. */
 export function sanitizePropertyKeys(input: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of input.split(/[\n,]/)) {
-    const key = raw.trim();
-    if (key === "" || seen.has(key)) continue;
-    seen.add(key);
-    out.push(key);
-  }
-  return out;
+  return parseKeyList(input);
 }
 
 /**

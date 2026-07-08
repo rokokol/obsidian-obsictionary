@@ -1,19 +1,12 @@
 import { MarkdownView, Notice, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
-import {
-  appendWord,
-  appendWords,
-  contentColumnsOf,
-  createDictionaryNote,
-} from "./commands/dictionaryCommands";
+import { createDictionaryNote } from "./commands/dictionaryCommands";
 import { DictionaryCache } from "./obsidian/cache";
 import { isDictionaryFile, readDictionary } from "./obsidian/dictionaryFile";
+import { parseWikilink } from "./render/blocks";
 import { renderDictionary } from "./render/dictionaryView";
 import { renderStats } from "./render/statsView";
-import { gatherDue } from "./review/collect";
 import { DEFAULT_SETTINGS, type ObsictionarySettings } from "./settings";
-import { AddWordModal } from "./ui/addWordModal";
-import { ImportWordsModal } from "./ui/importWordsModal";
-import { ReviewModal } from "./ui/reviewModal";
+import { promptAddWord, promptImportWords, startReviewSession } from "./ui/prompts";
 import { ObsictionarySettingTab } from "./ui/settingsTab";
 import { DICTIONARY_VIEW_TYPE, DictionaryEditorView } from "./view/dictionaryEditorView";
 
@@ -176,20 +169,12 @@ export default class ObsictionaryPlugin extends Plugin {
 
   private async promptAddWord(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
-    if (!doc) return;
-    const columns = contentColumnsOf(doc, this.settings.newDictionaryColumns);
-    new AddWordModal(this.app, columns, file.path, (values) => {
-      void appendWord(this.app, file, values);
-    }).open();
+    if (doc) promptAddWord(this.app, file, doc, this.settings.newDictionaryColumns);
   }
 
   private async promptImportWords(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
-    if (!doc) return;
-    const columns = contentColumnsOf(doc, this.settings.newDictionaryColumns);
-    new ImportWordsModal(this.app, columns, (rows) => {
-      void appendWords(this.app, file, rows);
-    }).open();
+    if (doc) promptImportWords(this.app, file, doc, this.settings.newDictionaryColumns);
   }
 
   private async createDictionary(): Promise<void> {
@@ -251,9 +236,7 @@ export default class ObsictionaryPlugin extends Plugin {
 
   /** True when every status-bar item is hidden (computed display none). */
   private static isStatusBarEmpty(bar: HTMLElement): boolean {
-    return Array.from(bar.children).every(
-      (el) => getComputedStyle(el).display === "none",
-    );
+    return Array.from(bar.children).every((el) => getComputedStyle(el).display === "none");
   }
 
   private maybeSwap(leaf: WorkspaceLeaf | null): void {
@@ -304,9 +287,7 @@ export default class ObsictionaryPlugin extends Plugin {
     if (arg === "") return this.filesFromPath(sourcePath);
     const scope = arg.toLowerCase();
     if (scope === "vault" || scope === "all") return this.cache.files();
-    const inner = arg.replace(/^!?\[\[/, "").replace(/\]\]$/, "");
-    const pipe = inner.indexOf("|");
-    const linkpath = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
+    const linkpath = parseWikilink(arg.replace(/^!/, ""))?.target ?? arg;
     const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
     return file && isDictionaryFile(this.app, file) ? [file] : [];
   }
@@ -317,12 +298,7 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   private async reviewFiles(files: TFile[]): Promise<void> {
-    const items = await gatherDue(this.app, files, new Date());
-    if (items.length === 0) {
-      new Notice("No cards due for review.");
-      return;
-    }
-    new ReviewModal(this.app, items, this.settings.fsrsRetention).open();
+    await startReviewSession(this.app, files, this.settings.fsrsRetention);
   }
 
   /** Re-render every open dictionary view (after a settings change). */

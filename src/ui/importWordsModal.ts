@@ -7,11 +7,7 @@ export class ImportWordsModal extends Modal {
   private readonly columns: string[];
   private readonly onSubmit: (rows: Record<string, string>[]) => void;
 
-  constructor(
-    app: App,
-    columns: string[],
-    onSubmit: (rows: Record<string, string>[]) => void,
-  ) {
+  constructor(app: App, columns: string[], onSubmit: (rows: Record<string, string>[]) => void) {
     super(app);
     this.columns = columns;
     this.onSubmit = onSubmit;
