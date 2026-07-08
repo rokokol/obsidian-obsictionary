@@ -1,6 +1,8 @@
 # Obsictionary
 
 Turn plain Obsidian notes into spaced-repetition **dictionaries**.
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/fe18cdd3-e1f4-44d1-95bf-c3df18fb7f9e" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/fbba32db-d901-4c06-a6be-2679ecd9567f" />
 
 A dictionary is just a markdown note: free-form theory on top, a `## Words` table
 below. Dictionaries open in an **interactive view** (Excalidraw-style) with an
@@ -25,8 +27,6 @@ Custom fields are just extra columns. Frontmatter keys (graph links like
 properties — wikilink/URL values become clickable links; pick which keys and
 their order in the plugin settings. Audio/image attachments referenced with
 `![[name]]` are resolved vault-wide.
-
-> Status: early development.
 
 ## A dictionary note
 
@@ -89,7 +89,7 @@ npm run build             # production build
 ```
 
 The build copies `main.js`, `manifest.json` and `styles.css` into the folder named
-by `OBSIDIAN_PLUGIN_DIR`. The vault path is never committed.
+by `OBSIDIAN_PLUGIN_DIR`.
 
 ## License
 
