@@ -93,7 +93,7 @@ describe("normalizeWords", () => {
 
   it("drops empty rows and fills gaps with the column name", () => {
     const table = make();
-    expect(normalizeWords(table)).toBe(true);
+    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 1, clearedSrs: 0 });
     expect(table.rows).toEqual([
       { word: "cat", translation: "кот", srs: "" },
       { word: "dog", translation: "translation", srs: "" },

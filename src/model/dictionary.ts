@@ -35,33 +35,52 @@ export function needsNormalize(table: MarkdownTable): boolean {
   );
 }
 
+/** What a `normalizeWords` pass touched, so callers can report it. */
+export interface NormalizeSummary {
+  /** Empty rows dropped entirely. */
+  removedRows: number;
+  /** Blank content cells filled with their column name as a placeholder. */
+  filledCells: number;
+  /** Rows whose invalid `srs` (and `due` mirror) were cleared. */
+  clearedSrs: number;
+}
+
+/** Whether a normalize summary reflects any actual change. */
+export function summaryChanged(summary: NormalizeSummary): boolean {
+  return summary.removedRows > 0 || summary.filledCells > 0 || summary.clearedSrs > 0;
+}
+
 /**
  * Clean up a hand-edited words table: drop rows with no content at all, fill any
  * remaining blank content cell with its column name (so no gap is left), and
  * clear an invalid `srs` (with its `due` mirror) so the row reads as a new card.
- * Mutates the table in place; returns whether anything changed.
+ * Mutates the table in place; returns a summary of what changed.
  */
-export function normalizeWords(table: MarkdownTable): boolean {
+export function normalizeWords(table: MarkdownTable): NormalizeSummary {
   const content = contentColumns(table.headers);
   const hasDue = table.headers.includes(DUE_COLUMN);
   const kept = table.rows.filter((row) => content.some((c) => (row[c] ?? "").trim() !== ""));
-  let changed = kept.length !== table.rows.length;
+  const summary: NormalizeSummary = {
+    removedRows: table.rows.length - kept.length,
+    filledCells: 0,
+    clearedSrs: 0,
+  };
   table.rows.length = 0;
   table.rows.push(...kept);
   for (const row of table.rows) {
     for (const c of content) {
       if ((row[c] ?? "").trim() === "") {
         row[c] = c;
-        changed = true;
+        summary.filledCells++;
       }
     }
     if (hasInvalidSrs(row)) {
       row[SRS_COLUMN] = "";
       if (hasDue) row[DUE_COLUMN] = "";
-      changed = true;
+      summary.clearedSrs++;
     }
   }
-  return changed;
+  return summary;
 }
 
 export interface WordsLocation {

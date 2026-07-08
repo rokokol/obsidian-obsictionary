@@ -279,6 +279,9 @@ body.obsictionary-hide-status .status-bar {
 
 .obsictionary-card-editable {
   position: relative;
+  /* Reserve a top strip so the hover handle/delete never sit over the first
+     cell's content (images, audio players, or the word itself). */
+  padding-top: calc(var(--size-4-3) + var(--icon-s));
 }
 
 .obsictionary-card-delete {

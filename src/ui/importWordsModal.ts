@@ -56,7 +56,7 @@ export class ImportWordsModal extends Modal {
     if (rows.length === 0) {
       new Notice(
         incomplete > 0
-          ? `Every row is missing a field (${incomplete.toString()}). Nothing imported.`
+          ? `Every row (${incomplete.toString()}) is missing a field. Nothing imported.`
           : "Nothing to import.",
       );
       return;
