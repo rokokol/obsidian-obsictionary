@@ -13,3 +13,8 @@ node_modules/
 # editor / os
 .DS_Store
 *.log
+
+# nix
+result
+result-*
+.direnv/
