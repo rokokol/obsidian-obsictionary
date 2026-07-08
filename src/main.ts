@@ -199,8 +199,8 @@ export default class ObsictionaryPlugin extends Plugin {
 
   private async startReview(): Promise<void> {
     if (this.settings.reviewScope === "note") {
-      const active = this.app.workspace.getActiveFile();
-      if (!active || !isDictionaryFile(this.app, active)) {
+      const active = this.activeDictionaryFile();
+      if (!active) {
         new Notice("Open a dictionary note to review it.");
         return;
       }
@@ -208,6 +208,19 @@ export default class ObsictionaryPlugin extends Plugin {
     } else {
       await this.reviewFiles(this.cache.files());
     }
+  }
+
+  /**
+   * The dictionary note currently in focus. The custom dictionary view is not a
+   * FileView, so `getActiveFile()` misses it — check that view explicitly first,
+   * then fall back to the active markdown file.
+   */
+  private activeDictionaryFile(): TFile | null {
+    const view = this.app.workspace.getActiveViewOfType(DictionaryEditorView);
+    const fromView = view?.getFile() ?? null;
+    if (fromView) return fromView;
+    const active = this.app.workspace.getActiveFile();
+    return active && isDictionaryFile(this.app, active) ? active : null;
   }
 
   /**

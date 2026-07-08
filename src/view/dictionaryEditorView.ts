@@ -11,7 +11,14 @@ import {
 } from "obsidian";
 import { appendWord, appendWords, contentColumnsOf } from "../commands/dictionaryCommands";
 import type ObsictionaryPlugin from "../main";
-import { contentColumns, DUE_COLUMN, needsNormalize, normalizeWords } from "../model/dictionary";
+import {
+  contentColumns,
+  DUE_COLUMN,
+  needsNormalize,
+  normalizeWords,
+  summaryChanged,
+  type NormalizeSummary,
+} from "../model/dictionary";
 import { sanitizeCell } from "../model/word";
 import {
   readDictionary,
@@ -31,6 +38,17 @@ import { ImportWordsModal } from "../ui/importWordsModal";
 import { ReviewModal } from "../ui/reviewModal";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
+
+/** Human-readable summary of an auto-cleanup pass, for a Notice. */
+function describeNormalize(summary: NormalizeSummary): string {
+  const parts: string[] = [];
+  if (summary.removedRows > 0) parts.push(`removed ${summary.removedRows} empty row(s)`);
+  if (summary.filledCells > 0) {
+    parts.push(`filled ${summary.filledCells} blank cell(s) with placeholders`);
+  }
+  if (summary.clearedSrs > 0) parts.push(`reset ${summary.clearedSrs} invalid card(s)`);
+  return `Cleaned up dictionary: ${parts.join(", ")}.`;
+}
 
 /** Interactive, Excalidraw-style dictionary editor bound to a markdown file. */
 export class DictionaryEditorView extends ItemView {
@@ -136,7 +154,15 @@ export class DictionaryEditorView extends ItemView {
       return;
     }
     this.syncHeaderTitle(file);
-    const doc = await readDictionary(this.app, file);
+    let doc: DictionaryDoc | null;
+    try {
+      doc = await readDictionary(this.app, file);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      new Notice(`Failed to read dictionary: ${msg}`);
+      root.createDiv({ cls: "obsictionary-view-empty", text: `Failed to read dictionary: ${msg}` });
+      return;
+    }
     if (!doc) {
       root.createDiv({
         cls: "obsictionary-view-empty",
@@ -145,11 +171,16 @@ export class DictionaryEditorView extends ItemView {
       return;
     }
 
-    // Clean up rows added by hand in the source (fill gaps, drop empty rows).
+    // Clean up rows added by hand in the source (fill gaps, drop empty rows,
+    // reset invalid srs/due). Report both what changed and any failure to persist.
     if (doc.table && needsNormalize(doc.table)) {
-      normalizeWords(doc.table);
+      const summary = normalizeWords(doc.table);
+      if (summaryChanged(summary)) new Notice(describeNormalize(summary));
       void updateWordsTable(this.app, file, (table) => {
         normalizeWords(table);
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        new Notice(`Failed to clean up srs/due in dictionary: ${msg}`);
       });
     }
 

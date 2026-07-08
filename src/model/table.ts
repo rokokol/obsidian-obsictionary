@@ -12,19 +12,23 @@ export interface MarkdownTable {
   rows: Record<string, string>[];
 }
 
-/** Split a single `| a | b |` line into trimmed cell strings. */
+/**
+ * Split a single `| a | b |` line into trimmed cell strings. Splits only on
+ * unescaped pipes and unescapes `\|` → `|`, so in-memory cell values are the
+ * logical text the user sees (serializeTable re-escapes on the way out). Other
+ * backslash sequences (e.g. `\frac`) are left untouched.
+ */
 function splitRow(line: string): string[] {
   let s = line.trim();
   if (s.startsWith("|")) s = s.slice(1);
   if (s.endsWith("|")) s = s.slice(0, -1);
-  // Split on unescaped pipes.
   const cells: string[] = [];
   let current = "";
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
     if (ch === undefined) break;
-    if (ch === "\\" && i + 1 < s.length) {
-      current += ch + (s[i + 1] ?? "");
+    if (ch === "\\" && s[i + 1] === "|") {
+      current += "|"; // escaped pipe → literal pipe
       i++;
       continue;
     }
@@ -37,6 +41,15 @@ function splitRow(line: string): string[] {
   }
   cells.push(current.trim());
   return cells;
+}
+
+/**
+ * Escape a cell value so it survives one markdown table cell: collapse newlines
+ * (a row is one line) and escape pipes so text after a `|` can't spill into the
+ * next column.
+ */
+function escapeCell(value: string): string {
+  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 }
 
 /** A GFM delimiter row like `| --- | :--: |`. */
@@ -78,17 +91,24 @@ export function parseTable(text: string): MarkdownTable | null {
 /** Serialize a table back to GFM markdown with padded columns. */
 export function serializeTable(table: MarkdownTable): string {
   const { headers, rows } = table;
-  const widths = headers.map((h) => {
-    const cellWidths = rows.map((r) => (r[h] ?? "").length);
-    return Math.max(h.length, 3, ...cellWidths);
+  const escHeaders = headers.map(escapeCell);
+  const escRows = rows.map((row) => {
+    const escaped: Record<string, string> = {};
+    for (const h of headers) escaped[h] = escapeCell(row[h] ?? "");
+    return escaped;
+  });
+
+  const widths = headers.map((h, i) => {
+    const cellWidths = escRows.map((r) => (r[h] ?? "").length);
+    return Math.max((escHeaders[i] ?? h).length, 3, ...cellWidths);
   });
 
   const pad = (value: string, width: number): string =>
     value + " ".repeat(Math.max(0, width - value.length));
 
-  const headerLine = `| ${headers.map((h, i) => pad(h, widths[i] ?? h.length)).join(" | ")} |`;
+  const headerLine = `| ${escHeaders.map((h, i) => pad(h, widths[i] ?? h.length)).join(" | ")} |`;
   const delimLine = `| ${widths.map((w) => "-".repeat(w)).join(" | ")} |`;
-  const bodyLines = rows.map((row) => {
+  const bodyLines = escRows.map((row) => {
     const cells = headers.map((h, i) => pad(row[h] ?? "", widths[i] ?? 0));
     return `| ${cells.join(" | ")} |`;
   });
