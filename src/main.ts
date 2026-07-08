@@ -64,7 +64,6 @@ export default class ObsictionaryPlugin extends Plugin {
 
     this.registerMarkdownPostProcessor((el, ctx) => {
       renderDictionary(
-        this.app,
         el,
         ctx,
         (sourcePath) => {
@@ -183,7 +182,8 @@ export default class ObsictionaryPlugin extends Plugin {
   private async promptAddWord(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
     if (!doc) return;
-    new AddWordModal(this.app, contentColumnsOf(doc), file.path, (values) => {
+    const columns = contentColumnsOf(doc, this.settings.newDictionaryColumns);
+    new AddWordModal(this.app, columns, file.path, (values) => {
       void appendWord(this.app, file, values);
     }).open();
   }
@@ -191,13 +191,14 @@ export default class ObsictionaryPlugin extends Plugin {
   private async promptImportWords(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
     if (!doc) return;
-    new ImportWordsModal(this.app, contentColumnsOf(doc), (rows) => {
+    const columns = contentColumnsOf(doc, this.settings.newDictionaryColumns);
+    new ImportWordsModal(this.app, columns, (rows) => {
       void appendWords(this.app, file, rows);
     }).open();
   }
 
   private async createDictionary(): Promise<void> {
-    const file = await createDictionaryNote(this.app, this.settings.defaultPreset);
+    const file = await createDictionaryNote(this.app, this.settings.newDictionaryColumns);
     await this.app.workspace.getLeaf(true).openFile(file);
   }
 

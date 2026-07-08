@@ -1,48 +1,24 @@
 import { DUE_COLUMN, isManagedColumn, PLUGIN_KEYS, SRS_COLUMN } from "./model/dictionary";
 
-/** Built-in preset identifiers. Users may reference custom presets by name too. */
-export type PresetId = "word-meaning" | "word-transcription-translation";
+/** Columns a fresh dictionary starts with — the first is the card front / key. */
+export const DEFAULT_COLUMNS = ["word", "transcription", "translation"];
 
-export interface PresetDef {
-  /** Human label shown in UI. */
-  label: string;
-  /** Ordered content columns (excludes the managed `srs`/`due` columns). */
-  columns: string[];
-  /** Column shown on the front of a review card. */
-  front: string;
-  /** Columns revealed on the back of a review card, in order. */
-  back: string[];
-}
-
-export const BUILTIN_PRESETS: Record<PresetId, PresetDef> = {
-  "word-meaning": {
-    label: "Word — meaning",
-    columns: ["word", "meaning"],
-    front: "word",
-    back: ["meaning"],
-  },
-  "word-transcription-translation": {
-    label: "Word — transcription — translation",
-    columns: ["word", "transcription", "translation"],
-    front: "word",
-    back: ["transcription", "translation"],
-  },
-};
-
-/** Content columns for a preset name; falls back to a sensible default. */
-export function contentColumnsFor(preset: string | null): string[] {
-  if (preset !== null && preset in BUILTIN_PRESETS) {
-    return [...BUILTIN_PRESETS[preset as PresetId].columns];
-  }
-  return ["word", "translation"];
-}
-
-/** The "front" column of a dictionary: preset front, else first non-managed header. */
-export function frontColumnFor(preset: string | null, headers: string[]): string {
-  if (preset !== null && preset in BUILTIN_PRESETS) {
-    return BUILTIN_PRESETS[preset as PresetId].front;
-  }
+/** The "front" column of a dictionary: the first non-managed header (the key). */
+export function frontColumnFor(headers: string[]): string {
   return headers.find((h) => !isManagedColumn(h)) ?? headers[0] ?? "";
+}
+
+/** Parse a user-typed column list (commas/newlines) into clean content columns. */
+export function sanitizeColumns(input: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input.split(/[\n,]/)) {
+    const key = raw.trim();
+    if (key === "" || isManagedColumn(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
 }
 
 /** How a dictionary note opens by default. */
@@ -60,8 +36,8 @@ export const SORT_LABELS: Record<SortMode, string> = {
 };
 
 export interface ObsictionarySettings {
-  /** Preset applied to newly created dictionaries. */
-  defaultPreset: PresetId;
+  /** Content columns a new dictionary is created with (first = card front/key). */
+  newDictionaryColumns: string[];
   /** Target retention for FSRS scheduling (0..1). */
   fsrsRetention: number;
   /** Whether review pulls due cards from all dictionaries or just the active note. */
@@ -81,7 +57,7 @@ export interface ObsictionarySettings {
 const DEFAULT_DISPLAYED_PROPERTIES = ["up", "prev", "next", "left", "source", "related"];
 
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
-  defaultPreset: "word-transcription-translation",
+  newDictionaryColumns: [...DEFAULT_COLUMNS],
   fsrsRetention: 0.9,
   reviewScope: "note",
   defaultView: "dictionary",

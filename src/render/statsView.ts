@@ -82,7 +82,7 @@ export async function renderStats(app: App, files: TFile[], el: HTMLElement): Pr
   for (const file of files) {
     const doc = await readDictionary(app, file);
     if (!doc?.table) continue;
-    const front = frontColumnFor(doc.frontmatter.preset, doc.table.headers);
+    const front = frontColumnFor(doc.table.headers);
     accumulateStats(stats, doc.table.rows, front, now);
   }
   renderStatsGrid(el, stats);

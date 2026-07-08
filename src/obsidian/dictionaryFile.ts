@@ -6,7 +6,6 @@ import type { MarkdownTable } from "../model/table";
 export const DICTIONARY_TAG = "obsictionary";
 
 export interface DictionaryFrontmatter {
-  preset: string | null;
   /** Non-plugin keys shown in the properties mini-table (incl. related, nav). */
   properties: Record<string, unknown>;
 }
@@ -20,13 +19,12 @@ export interface DictionaryDoc {
 }
 
 function parseFrontmatter(fm: Record<string, unknown>): DictionaryFrontmatter {
-  const preset = fm["preset"];
   const properties: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fm)) {
     if (PLUGIN_KEYS.has(key)) continue;
     properties[key] = value;
   }
-  return { preset: typeof preset === "string" ? preset : null, properties };
+  return { properties };
 }
 
 /** Raw frontmatter object for a file, from Obsidian's metadata cache. */

@@ -1,4 +1,4 @@
-import type { App, MarkdownPostProcessorContext } from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 import { isManagedColumn, SRS_COLUMN } from "../model/dictionary";
 import { DICTIONARY_TAG } from "../obsidian/dictionaryFile";
 import { frontColumnFor } from "../settings";
@@ -15,12 +15,6 @@ function isDictionaryFrontmatter(fm: Record<string, unknown>): boolean {
   const tags = fm["tags"];
   const list = Array.isArray(tags) ? tags : typeof tags === "string" ? [tags] : [];
   return list.some((t) => typeof t === "string" && t.replace(/^#/, "") === DICTIONARY_TAG);
-}
-
-/** Determine the "front" column for a note from its preset, else first column. */
-function resolveFront(fm: Record<string, unknown>, headers: string[]): string {
-  const preset = fm["preset"];
-  return frontColumnFor(typeof preset === "string" ? preset : null, headers);
 }
 
 /** A table is the words table if it carries the front column and an srs column. */
@@ -81,7 +75,6 @@ function moveChildren(from: Element, to: HTMLElement): void {
  * table is transformed.
  */
 export function renderDictionary(
-  app: App,
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
   onReview?: (sourcePath: string) => void,
@@ -96,7 +89,7 @@ export function renderDictionary(
   for (const table of tables) {
     if (table.dataset["obsictionary"] === "done") continue;
     const headers = readHeaders(table);
-    const front = resolveFront(fm, headers);
+    const front = frontColumnFor(headers);
     if (!isWordsTable(headers, front)) continue;
 
     const container = createDiv({ cls: "obsictionary-dictionary" });
@@ -111,7 +104,7 @@ export function renderDictionary(
     }
 
     const header = container.createDiv({ cls: "obsictionary-meta" });
-    renderDictionaryMeta(header, fm, ctx.sourcePath, allowProperties, app);
+    renderDictionaryMeta(header, fm, ctx.sourcePath, allowProperties);
     if (!header.hasChildNodes()) header.remove();
     container.appendChild(renderCards(table, headers, front));
     table.replaceWith(container);

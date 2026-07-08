@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missingColumns, sanitizeCell } from "../src/model/word";
+import { fillMissing, hasContent, sanitizeCell } from "../src/model/word";
 
 describe("sanitizeCell", () => {
   it("collapses newlines, escapes pipes, and trims", () => {
@@ -11,16 +11,28 @@ describe("sanitizeCell", () => {
   });
 });
 
-describe("missingColumns", () => {
-  it("lists columns whose value is blank or whitespace", () => {
-    expect(missingColumns({ word: "cat", meaning: "  " }, ["word", "meaning"])).toEqual(["meaning"]);
+describe("hasContent", () => {
+  it("is true when any column is non-empty", () => {
+    expect(hasContent({ word: "cat", meaning: "  " }, ["word", "meaning"])).toBe(true);
   });
 
-  it("returns an empty list when every column is filled", () => {
-    expect(missingColumns({ word: "cat", meaning: "кот" }, ["word", "meaning"])).toEqual([]);
+  it("is false when every column is blank", () => {
+    expect(hasContent({ word: " ", meaning: "" }, ["word", "meaning"])).toBe(false);
+  });
+});
+
+describe("fillMissing", () => {
+  it("fills blank fields with their column name and keeps only given columns", () => {
+    expect(fillMissing({ word: "cat", meaning: "  ", extra: "x" }, ["word", "meaning"])).toEqual({
+      word: "cat",
+      meaning: "meaning",
+    });
   });
 
-  it("treats absent keys as missing", () => {
-    expect(missingColumns({ word: "cat" }, ["word", "meaning"])).toEqual(["meaning"]);
+  it("treats absent keys as blank", () => {
+    expect(fillMissing({ word: "cat" }, ["word", "meaning"])).toEqual({
+      word: "cat",
+      meaning: "meaning",
+    });
   });
 });

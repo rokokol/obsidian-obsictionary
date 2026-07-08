@@ -26,7 +26,7 @@ export async function gatherDue(app: App, files: TFile[], now: Date): Promise<Re
     const doc = await readDictionary(app, file);
     if (!doc?.table) continue;
     const { headers, rows } = doc.table;
-    const front = frontColumnFor(doc.frontmatter.preset, headers);
+    const front = frontColumnFor(headers);
     const contentCols = contentColumns(headers);
     const backColumns = contentCols.filter((h) => h !== front);
 
