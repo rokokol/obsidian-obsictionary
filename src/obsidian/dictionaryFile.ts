@@ -1,6 +1,9 @@
 import { getAllTags, getFrontMatterInfo, type App, type TFile } from "obsidian";
-import { locateWords, PLUGIN_KEYS, replaceTheory, replaceWordsTable } from "../model/dictionary";
+import { locateWords, replaceTheory, replaceWordsTable } from "../model/dictionary";
 import type { MarkdownTable } from "../model/table";
+
+/** Obsidian injects `position` into cached frontmatter; never a real property. */
+const SYNTHETIC_KEYS = new Set(["position"]);
 
 /** Tag that marks a note as an Obsictionary dictionary. */
 export const DICTIONARY_TAG = "obsictionary";
@@ -21,7 +24,7 @@ export interface DictionaryDoc {
 function parseFrontmatter(fm: Record<string, unknown>): DictionaryFrontmatter {
   const properties: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fm)) {
-    if (PLUGIN_KEYS.has(key)) continue;
+    if (SYNTHETIC_KEYS.has(key)) continue;
     properties[key] = value;
   }
   return { properties };

@@ -20,8 +20,33 @@ export function contentColumns(headers: string[]): string[] {
   return headers.filter((header) => !isManagedColumn(header));
 }
 
-/** Frontmatter keys owned by the plugin (never shown as user "properties"). */
-export const PLUGIN_KEYS = new Set(["preset"]);
+/** Whether a hand-edited table has blank content cells to fill or empty rows to drop. */
+export function needsNormalize(table: MarkdownTable): boolean {
+  const content = contentColumns(table.headers);
+  return table.rows.some((row) => content.some((c) => (row[c] ?? "").trim() === ""));
+}
+
+/**
+ * Clean up a hand-edited words table: drop rows with no content at all, and fill
+ * any remaining blank content cell with its column name (so no gap is left).
+ * Mutates the table in place; returns whether anything changed.
+ */
+export function normalizeWords(table: MarkdownTable): boolean {
+  const content = contentColumns(table.headers);
+  const kept = table.rows.filter((row) => content.some((c) => (row[c] ?? "").trim() !== ""));
+  let changed = kept.length !== table.rows.length;
+  table.rows.length = 0;
+  table.rows.push(...kept);
+  for (const row of table.rows) {
+    for (const c of content) {
+      if ((row[c] ?? "").trim() === "") {
+        row[c] = c;
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
 
 export interface WordsLocation {
   /** Markdown before the `## Words` heading — treated as free-form theory. */

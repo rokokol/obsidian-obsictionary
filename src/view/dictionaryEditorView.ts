@@ -11,7 +11,7 @@ import {
 } from "obsidian";
 import { appendWord, appendWords, contentColumnsOf } from "../commands/dictionaryCommands";
 import type ObsictionaryPlugin from "../main";
-import { contentColumns, DUE_COLUMN } from "../model/dictionary";
+import { contentColumns, DUE_COLUMN, needsNormalize, normalizeWords } from "../model/dictionary";
 import { sanitizeCell } from "../model/word";
 import {
   readDictionary,
@@ -143,6 +143,14 @@ export class DictionaryEditorView extends ItemView {
         text: "This note is not an Obsictionary dictionary.",
       });
       return;
+    }
+
+    // Clean up rows added by hand in the source (fill gaps, drop empty rows).
+    if (doc.table && needsNormalize(doc.table)) {
+      normalizeWords(doc.table);
+      void updateWordsTable(this.app, file, (table) => {
+        normalizeWords(table);
+      });
     }
 
     const headers = doc.table?.headers ?? [];
@@ -456,10 +464,10 @@ export class DictionaryEditorView extends ItemView {
     const finish = (save: boolean): void => {
       if (committed) return;
       committed = true;
+      const next = sanitizeCell(input.value);
       // Clearing a field would orphan the row (a blank front hides the card),
-      // so an emptied cell falls back to its column name instead of going blank.
-      const next = sanitizeCell(input.value) || column;
-      if (save && next !== value) {
+      // so an empty edit reverts to the previous value instead of saving.
+      if (save && next !== "" && next !== value) {
         void this.editCell(file, rowIndex, column, next);
       } else {
         this.renderEditable(el, file, rowIndex, column, value);

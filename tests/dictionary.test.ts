@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { locateWords, replaceTheory, replaceWordsTable } from "../src/model/dictionary";
+import {
+  locateWords,
+  needsNormalize,
+  normalizeWords,
+  replaceTheory,
+  replaceWordsTable,
+} from "../src/model/dictionary";
+import type { MarkdownTable } from "../src/model/table";
 
 const BODY = [
   "> [!info]+ Theory",
@@ -64,5 +71,32 @@ describe("replaceTheory", () => {
     const next = replaceTheory(BODY, "");
     expect(next.startsWith("## Words")).toBe(true);
     expect(locateWords(next).table?.rows).toHaveLength(2);
+  });
+});
+
+describe("normalizeWords", () => {
+  const make = (): MarkdownTable => ({
+    headers: ["word", "translation", "srs"],
+    rows: [
+      { word: "cat", translation: "кот", srs: "" },
+      { word: "dog", translation: "", srs: "" }, // incomplete → fill gap
+      { word: "", translation: "", srs: "" }, // empty → drop
+    ],
+  });
+
+  it("detects tables with blank content cells", () => {
+    expect(needsNormalize(make())).toBe(true);
+    expect(needsNormalize({ headers: ["word", "srs"], rows: [{ word: "cat", srs: "" }] })).toBe(
+      false,
+    );
+  });
+
+  it("drops empty rows and fills gaps with the column name", () => {
+    const table = make();
+    expect(normalizeWords(table)).toBe(true);
+    expect(table.rows).toEqual([
+      { word: "cat", translation: "кот", srs: "" },
+      { word: "dog", translation: "translation", srs: "" },
+    ]);
   });
 });
