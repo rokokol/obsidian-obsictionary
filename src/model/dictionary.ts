@@ -1,3 +1,4 @@
+import { decodeCard } from "./srs";
 import { parseTable, serializeTable, type MarkdownTable } from "./table";
 
 /** Heading that marks the start of the words table inside a dictionary note. */
@@ -20,19 +21,29 @@ export function contentColumns(headers: string[]): string[] {
   return headers.filter((header) => !isManagedColumn(header));
 }
 
-/** Whether a hand-edited table has blank content cells to fill or empty rows to drop. */
+/** A non-empty `srs` cell that doesn't decode to a card is garbage. */
+function hasInvalidSrs(row: Record<string, string>): boolean {
+  const srs = (row[SRS_COLUMN] ?? "").trim();
+  return srs !== "" && decodeCard(srs) === null;
+}
+
+/** Whether a hand-edited table has gaps, empty rows, or invalid `srs` to clean. */
 export function needsNormalize(table: MarkdownTable): boolean {
   const content = contentColumns(table.headers);
-  return table.rows.some((row) => content.some((c) => (row[c] ?? "").trim() === ""));
+  return table.rows.some(
+    (row) => content.some((c) => (row[c] ?? "").trim() === "") || hasInvalidSrs(row),
+  );
 }
 
 /**
- * Clean up a hand-edited words table: drop rows with no content at all, and fill
- * any remaining blank content cell with its column name (so no gap is left).
+ * Clean up a hand-edited words table: drop rows with no content at all, fill any
+ * remaining blank content cell with its column name (so no gap is left), and
+ * clear an invalid `srs` (with its `due` mirror) so the row reads as a new card.
  * Mutates the table in place; returns whether anything changed.
  */
 export function normalizeWords(table: MarkdownTable): boolean {
   const content = contentColumns(table.headers);
+  const hasDue = table.headers.includes(DUE_COLUMN);
   const kept = table.rows.filter((row) => content.some((c) => (row[c] ?? "").trim() !== ""));
   let changed = kept.length !== table.rows.length;
   table.rows.length = 0;
@@ -43,6 +54,11 @@ export function normalizeWords(table: MarkdownTable): boolean {
         row[c] = c;
         changed = true;
       }
+    }
+    if (hasInvalidSrs(row)) {
+      row[SRS_COLUMN] = "";
+      if (hasDue) row[DUE_COLUMN] = "";
+      changed = true;
     }
   }
   return changed;

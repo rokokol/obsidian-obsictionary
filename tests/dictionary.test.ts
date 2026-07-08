@@ -99,4 +99,14 @@ describe("normalizeWords", () => {
       { word: "dog", translation: "translation", srs: "" },
     ]);
   });
+
+  it("clears an invalid srs (and its due mirror)", () => {
+    const table: MarkdownTable = {
+      headers: ["word", "due", "srs"],
+      rows: [{ word: "cat", due: "2026-01-01", srs: "not json" }],
+    };
+    expect(needsNormalize(table)).toBe(true);
+    normalizeWords(table);
+    expect(table.rows).toEqual([{ word: "cat", due: "", srs: "" }]);
+  });
 });
