@@ -1,5 +1,6 @@
 import {
   ItemView,
+  Keymap,
   MarkdownRenderer,
   Menu,
   Notice,
@@ -19,6 +20,7 @@ import {
   type DictionaryDoc,
 } from "../obsidian/dictionaryFile";
 import { enhanceFieldInput } from "../obsidian/fieldInput";
+import { renderCellValue } from "../render/cellValue";
 import { renderDictionaryMeta } from "../render/meta";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { gatherDue } from "../review/collect";
@@ -88,6 +90,11 @@ export class DictionaryEditorView extends ItemView {
       const file = this.file;
       if (file) void this.plugin.openAsMarkdown(file, this.leaf);
     });
+    // A custom view doesn't get Obsidian's native link handling, so delegate
+    // clicks on any rendered link (header properties and card fields alike).
+    this.registerDomEvent(this.contentEl, "click", (evt) => {
+      this.handleLinkClick(evt);
+    });
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (file.path === this.file?.path) void this.renderView();
@@ -99,6 +106,23 @@ export class DictionaryEditorView extends ItemView {
       }),
     );
     return Promise.resolve();
+  }
+
+  /** Open internal/external links clicked anywhere in the view. */
+  private handleLinkClick(evt: MouseEvent): void {
+    const anchor = (evt.target as HTMLElement).closest("a");
+    if (!anchor) return;
+    if (anchor.hasClass("internal-link")) {
+      evt.preventDefault();
+      const href = anchor.getAttribute("data-href") ?? anchor.getAttribute("href") ?? "";
+      if (href !== "") {
+        void this.app.workspace.openLinkText(href, this.file?.path ?? "", Keymap.isModEvent(evt));
+      }
+    } else if (anchor.hasClass("external-link")) {
+      evt.preventDefault();
+      const href = anchor.getAttribute("href");
+      if (href) window.open(href, "_blank");
+    }
   }
 
   private async renderView(): Promise<void> {
@@ -122,7 +146,7 @@ export class DictionaryEditorView extends ItemView {
     }
 
     const headers = doc.table?.headers ?? [];
-    const front = frontColumnFor(doc.frontmatter.preset, headers);
+    const front = frontColumnFor(headers);
     const backCols = contentColumns(headers).filter((h) => h !== front);
 
     this.renderToolbar(root, file, doc);
@@ -317,13 +341,7 @@ export class DictionaryEditorView extends ItemView {
 
   private renderMeta(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
     const meta = root.createDiv({ cls: "obsictionary-meta" });
-    renderDictionaryMeta(
-      meta,
-      doc.frontmatter.properties,
-      file.path,
-      this.plugin.settings.properties,
-      this.app,
-    );
+    renderDictionaryMeta(meta, doc.frontmatter.properties, file.path, this.plugin.settings.properties);
     if (!meta.hasChildNodes()) meta.remove();
   }
 
@@ -410,11 +428,11 @@ export class DictionaryEditorView extends ItemView {
       el.setText("…");
     } else {
       el.removeClass("is-empty");
-      void MarkdownRenderer.render(this.app, value, el, file.path, this);
+      renderCellValue(this.app, el, value, file.path, this);
     }
     el.addEventListener("click", (evt) => {
       const target = evt.target as HTMLElement;
-      if (target.closest("audio, img, .internal-embed, input")) return;
+      if (target.closest("audio, video, img, a, .internal-embed, input")) return;
       this.beginEdit(el, file, rowIndex, column, value);
     });
   }
@@ -438,10 +456,10 @@ export class DictionaryEditorView extends ItemView {
     const finish = (save: boolean): void => {
       if (committed) return;
       committed = true;
-      const next = sanitizeCell(input.value);
       // Clearing a field would orphan the row (a blank front hides the card),
-      // so an empty edit reverts to the previous value instead of saving.
-      if (save && next !== "" && next !== value) {
+      // so an emptied cell falls back to its column name instead of going blank.
+      const next = sanitizeCell(input.value) || column;
+      if (save && next !== value) {
         void this.editCell(file, rowIndex, column, next);
       } else {
         this.renderEditable(el, file, rowIndex, column, value);
@@ -526,13 +544,15 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private promptAdd(file: TFile, doc: DictionaryDoc): void {
-    new AddWordModal(this.app, contentColumnsOf(doc), file.path, (values) => {
+    const columns = contentColumnsOf(doc, this.plugin.settings.newDictionaryColumns);
+    new AddWordModal(this.app, columns, file.path, (values) => {
       void appendWord(this.app, file, values);
     }).open();
   }
 
   private promptImport(file: TFile, doc: DictionaryDoc): void {
-    new ImportWordsModal(this.app, contentColumnsOf(doc), (rows) => {
+    const columns = contentColumnsOf(doc, this.plugin.settings.newDictionaryColumns);
+    new ImportWordsModal(this.app, columns, (rows) => {
       void appendWords(this.app, file, rows);
     }).open();
   }

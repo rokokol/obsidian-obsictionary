@@ -1,11 +1,10 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import type ObsictionaryPlugin from "../main";
 import {
-  BUILTIN_PRESETS,
+  sanitizeColumns,
   sanitizePropertyKeys,
   SORT_LABELS,
   type DefaultView,
-  type PresetId,
   type SortMode,
 } from "../settings";
 
@@ -22,17 +21,22 @@ export class ObsictionarySettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName("Default preset")
-      .setDesc("Preset applied to newly created dictionaries.")
-      .addDropdown((dropdown) => {
-        for (const [id, def] of Object.entries(BUILTIN_PRESETS)) {
-          dropdown.addOption(id, def.label);
-        }
-        dropdown.setValue(this.plugin.settings.defaultPreset);
-        dropdown.onChange((value) => {
-          this.plugin.settings.defaultPreset = value as PresetId;
+      .setName("New dictionary columns")
+      .setDesc(
+        "Comma-separated columns a new dictionary is created with. The first is " +
+          "the card front (the word/key); the rest are its fields. Any number of " +
+          "columns is fine.",
+      )
+      .addText((text) => {
+        text.setPlaceholder("word, transcription, translation");
+        text.setValue(this.plugin.settings.newDictionaryColumns.join(", "));
+        const commit = (): void => {
+          const columns = sanitizeColumns(text.getValue());
+          if (columns.length > 0) this.plugin.settings.newDictionaryColumns = columns;
+          text.setValue(this.plugin.settings.newDictionaryColumns.join(", "));
           void this.plugin.saveSettings();
-        });
+        };
+        text.inputEl.addEventListener("blur", commit);
       });
 
     new Setting(containerEl)

@@ -1,7 +1,5 @@
 /** Shared wikilink helpers and the link-aware properties table. */
 
-import { Keymap, type App } from "obsidian";
-
 export function stringifyValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return value.map(stringifyValue).join(", ");
@@ -29,24 +27,15 @@ function toStringArray(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
-function appendInternalLink(
-  container: HTMLElement,
-  link: ParsedWikilink,
-  sourcePath: string,
-  app: App,
-): void {
+function appendInternalLink(container: HTMLElement, link: ParsedWikilink, sourcePath: string): void {
   const a = container.createEl("a", { cls: "internal-link", text: link.display });
   a.dataset["href"] = link.target;
   a.setAttribute("href", link.target);
   a.setAttribute("data-source-path", sourcePath);
-  a.addEventListener("click", (evt) => {
-    evt.preventDefault();
-    void app.workspace.openLinkText(link.target, sourcePath, Keymap.isModEvent(evt));
-  });
 }
 
 /** Render one frontmatter value as internal link(s), external link, or text. */
-function appendValue(container: HTMLElement, value: unknown, sourcePath: string, app: App): void {
+function appendValue(container: HTMLElement, value: unknown, sourcePath: string): void {
   const items = toStringArray(value);
   if (items.length === 0) {
     container.createSpan({ text: stringifyValue(value) });
@@ -56,15 +45,12 @@ function appendValue(container: HTMLElement, value: unknown, sourcePath: string,
     if (i > 0) container.createSpan({ text: ", " });
     const link = parseWikilink(raw);
     if (link) {
-      appendInternalLink(container, link, sourcePath, app);
+      appendInternalLink(container, link, sourcePath);
     } else if (/^https?:\/\//.test(raw.trim())) {
       const url = raw.trim();
       const a = container.createEl("a", { cls: "external-link", text: url });
       a.setAttribute("href", url);
-      a.addEventListener("click", (evt) => {
-        evt.preventDefault();
-        window.open(url, "_blank");
-      });
+      a.setAttribute("target", "_blank");
     } else {
       container.createSpan({ text: raw });
     }
@@ -80,13 +66,12 @@ export function renderProperties(
   container: HTMLElement,
   entries: [string, unknown][],
   sourcePath: string,
-  app: App,
 ): void {
   if (entries.length === 0) return;
   const list = container.createDiv({ cls: "obsictionary-props" });
   for (const [key, value] of entries) {
     const item = list.createDiv({ cls: "obsictionary-prop" });
     item.createSpan({ cls: "obsictionary-prop-key", text: key });
-    appendValue(item.createSpan({ cls: "obsictionary-prop-value" }), value, sourcePath, app);
+    appendValue(item.createSpan({ cls: "obsictionary-prop-value" }), value, sourcePath);
   }
 }

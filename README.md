@@ -11,7 +11,7 @@ reading mode.
 In the view you can:
 
 - add words, or bulk-import many at once (one per line, `|` or `;` columns;
-  incomplete rows are skipped with a confirmation);
+  blank fields are auto-filled with their column name);
 - edit any field inline — paste an attachment to embed it, or type `[[` for
   wiki-link autocomplete across every vault file;
 - drag the handle on a card to reorder (a line shows the insert position);
@@ -34,7 +34,6 @@ their order in the plugin settings. Audio/image attachments referenced with
 ---
 tags:
   - obsictionary
-preset: word-transcription-translation
 level: B2
 ---
 > [!info]+ Theory
@@ -49,7 +48,11 @@ level: B2
 
 - A note is a dictionary because it carries the `obsictionary` tag.
 - Everything **before** `## Words` is theory and rendered natively.
-- Each row is a word; columns are the preset fields plus any custom ones.
+- Columns are whatever the table defines — the **first** content column is the
+  card front (the key), the rest are its fields. New dictionaries start from the
+  columns set in **New dictionary columns** in the plugin settings.
+- Adding or importing a word auto-fills any blank field with its column name, so
+  a partly-filled word is never left with an empty gap.
 - `srs` is a managed column (compact FSRS state); `due` is a readable copy.
 - Attachments are resolved vault-wide by basename via the Obsidian API — put them
   anywhere.

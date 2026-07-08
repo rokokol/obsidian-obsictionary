@@ -7,11 +7,13 @@ import {
   updateWordsTable,
   type DictionaryDoc,
 } from "../obsidian/dictionaryFile";
-import { contentColumnsFor, type PresetId } from "../settings";
 
-/** Content columns to prompt for when adding words to `doc` (falls back to preset). */
-export function contentColumnsOf(doc: DictionaryDoc): string[] {
-  return doc.table ? contentColumns(doc.table.headers) : contentColumnsFor(doc.frontmatter.preset);
+/**
+ * Content columns to prompt for when adding words to `doc`: the existing table's
+ * columns, or `fallback` (the configured new-dictionary columns) if it has none.
+ */
+export function contentColumnsOf(doc: DictionaryDoc, fallback: string[]): string[] {
+  return doc.table ? contentColumns(doc.table.headers) : fallback;
 }
 
 function buildRow(headers: string[], values: Record<string, string>): Record<string, string> {
@@ -39,7 +41,10 @@ export async function appendWords(
     return;
   }
 
-  const headers = [...contentColumnsFor(doc.frontmatter.preset), DUE_COLUMN, SRS_COLUMN];
+  // No table yet: derive columns from the word's own fields (they come from the
+  // add/import prompt, which was built with the configured columns).
+  const contentCols = Object.keys(valuesList[0] ?? {});
+  const headers = [...contentCols, DUE_COLUMN, SRS_COLUMN];
   const table: MarkdownTable = {
     headers,
     rows: valuesList.map((values) => buildRow(headers, values)),
@@ -69,19 +74,18 @@ function availablePath(app: App, folder: string, base: string): string {
 }
 
 /**
- * Create a new, generic dictionary note (plugin frontmatter only — no
- * vault-specific keys) and return it.
+ * Create a new, generic dictionary note (only the `#obsictionary` tag — no
+ * vault-specific keys) with the given content columns, and return it.
  */
-export async function createDictionaryNote(app: App, preset: PresetId): Promise<TFile> {
+export async function createDictionaryNote(app: App, columns: string[]): Promise<TFile> {
   const parent = app.fileManager.getNewFileParent("");
   const path = availablePath(app, parent.path, "New dictionary");
-  const headers = [...contentColumnsFor(preset), DUE_COLUMN, SRS_COLUMN];
+  const headers = [...columns, DUE_COLUMN, SRS_COLUMN];
   const table: MarkdownTable = { headers, rows: [] };
   const content = [
     "---",
     "tags:",
     `  - ${DICTIONARY_TAG}`,
-    `preset: ${preset}`,
     "---",
     "## Words",
     "",
