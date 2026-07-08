@@ -51,8 +51,9 @@ level: B2
 - Columns are whatever the table defines — the **first** content column is the
   card front (the key), the rest are its fields. New dictionaries start from the
   columns set in **New dictionary columns** in the plugin settings.
-- Adding or importing a word auto-fills any blank field with its column name, so
-  a partly-filled word is never left with an empty gap.
+- Add/import warn about missing fields; rows added by hand in the source are
+  cleaned up when the dictionary opens (gaps filled with the column name, empty
+  rows dropped, invalid `srs` reset).
 - `srs` is a managed column (compact FSRS state); `due` is a readable copy.
 - Attachments are resolved vault-wide by basename via the Obsidian API — put them
   anywhere.
@@ -69,7 +70,8 @@ vault
 `````
 
 - empty body — stats for the current note (when it is a dictionary);
-- `vault` — an aggregate across every dictionary in the vault.
+- `vault` (or `all`) — an aggregate across every dictionary in the vault;
+- a dictionary name, path or `[[wiki-link]]` — stats for that specific dictionary.
 
 Values are computed live on render, so nothing is written to frontmatter (it
 would go stale).

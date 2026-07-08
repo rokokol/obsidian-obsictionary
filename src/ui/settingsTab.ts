@@ -83,8 +83,8 @@ export class ObsictionarySettingTab extends PluginSettingTab {
       .setName("Displayed properties")
       .setDesc(
         "Frontmatter keys shown in the dictionary header, comma-separated, in this " +
-          "order. Wikilink/URL values render as links. Leave empty to show every " +
-          "property; the default is up, prev, next, left, source, related.",
+          "order. Wikilink/URL values render as links. Leave empty (the default) to " +
+          "show every property.",
       )
       .addText((text) => {
         text.setPlaceholder("up, source, related, level");

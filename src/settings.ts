@@ -53,16 +53,13 @@ export interface ObsictionarySettings {
   properties: string[];
 }
 
-/** Header keys shown by default: graph edges, source and related links. */
-const DEFAULT_DISPLAYED_PROPERTIES = ["up", "prev", "next", "left", "source", "related"];
-
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
   newDictionaryColumns: [...DEFAULT_COLUMNS],
   fsrsRetention: 0.9,
   reviewScope: "note",
   defaultView: "dictionary",
   defaultSort: "manual",
-  properties: [...DEFAULT_DISPLAYED_PROPERTIES],
+  properties: [], // empty = render every property
 };
 
 /** Parse a user-typed list (commas/newlines) into a clean, deduped key list. */

@@ -74,12 +74,7 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.registerMarkdownCodeBlockProcessor("obsictionary-stats", (source, el, ctx) => {
-      const scope = source.trim().toLowerCase();
-      const files =
-        scope === "vault" || scope === "all"
-          ? this.cache.files()
-          : this.filesFromPath(ctx.sourcePath);
-      void renderStats(this.app, files, el);
+      void renderStats(this.app, this.statsFiles(source, ctx.sourcePath), el);
     });
 
     this.addCommand({
@@ -284,6 +279,23 @@ export default class ObsictionaryPlugin extends Plugin {
   private filesFromPath(path: string): TFile[] {
     const file = this.app.vault.getAbstractFileByPath(path);
     return file instanceof TFile ? [file] : [];
+  }
+
+  /**
+   * Files for an `obsictionary-stats` block: empty body → the current note;
+   * `vault`/`all` → every dictionary; otherwise a dictionary referenced by name,
+   * path or `[[wiki-link]]`.
+   */
+  private statsFiles(source: string, sourcePath: string): TFile[] {
+    const arg = source.trim();
+    if (arg === "") return this.filesFromPath(sourcePath);
+    const scope = arg.toLowerCase();
+    if (scope === "vault" || scope === "all") return this.cache.files();
+    const inner = arg.replace(/^!?\[\[/, "").replace(/\]\]$/, "");
+    const pipe = inner.indexOf("|");
+    const linkpath = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
+    const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
+    return file && isDictionaryFile(this.app, file) ? [file] : [];
   }
 
   private async reviewByPath(sourcePath: string): Promise<void> {

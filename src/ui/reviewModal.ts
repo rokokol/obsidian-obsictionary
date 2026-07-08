@@ -1,5 +1,6 @@
-import { Component, MarkdownRenderer, Modal, type App } from "obsidian";
+import { Component, Modal, type App } from "obsidian";
 import { previewDueDates, review, REVIEW_RATINGS, type ReviewRating } from "../model/srs";
+import { renderCellValue } from "../render/cellValue";
 import { writeReview, type ReviewItem } from "../review/collect";
 
 function capitalize(value: string): string {
@@ -76,13 +77,7 @@ export class ReviewModal extends Modal {
     });
 
     const front = contentEl.createDiv({ cls: "obsictionary-review-front" });
-    void MarkdownRenderer.render(
-      this.app,
-      item.frontValue,
-      front,
-      item.file.path,
-      this.renderComponent,
-    );
+    renderCellValue(this.app, front, item.frontValue, item.file.path, this.renderComponent);
 
     contentEl.createDiv({ cls: "obsictionary-review-back" });
     const controls = contentEl.createDiv({ cls: "obsictionary-review-controls" });
@@ -110,7 +105,7 @@ export class ReviewModal extends Modal {
       const field = back.createDiv({ cls: "obsictionary-review-field" });
       field.createDiv({ cls: "obsictionary-review-field-name", text: col });
       const valueEl = field.createDiv({ cls: "obsictionary-review-field-value" });
-      void MarkdownRenderer.render(this.app, value, valueEl, item.file.path, this.renderComponent);
+      renderCellValue(this.app, valueEl, value, item.file.path, this.renderComponent);
     }
 
     controls.empty();
