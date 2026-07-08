@@ -1,17 +1,18 @@
-import { Modal, Notice, Setting, type App } from "obsidian";
-import { fillMissing, hasContent, sanitizeCell } from "../model/word";
+import { Modal, Setting, type App } from "obsidian";
+import { missingColumns, sanitizeCell } from "../model/word";
 import { enhanceFieldInput } from "../obsidian/fieldInput";
 
 /**
- * Prompt for the fields of a new word. Blank fields are auto-filled with their
- * column name, so a partly-filled word is still added; an entirely empty form
- * adds nothing. On success the values are handed to `onSubmit`.
+ * Prompt for the fields of a new word. Every field is required: submitting with
+ * a blank field shows an inline warning instead of adding an incomplete word. On
+ * success the sanitized values are handed to `onSubmit`; cancelling yields none.
  */
 export class AddWordModal extends Modal {
   private readonly columns: string[];
   private readonly sourcePath: string;
   private readonly draft: Record<string, string> = {};
   private readonly onSubmit: (values: Record<string, string>) => void;
+  private errorEl: HTMLElement | null = null;
   private result: Record<string, string> | null = null;
 
   constructor(
@@ -35,6 +36,7 @@ export class AddWordModal extends Modal {
       new Setting(contentEl).setName(column).addText((text) => {
         text.onChange((value) => {
           this.draft[column] = value;
+          this.errorEl?.hide();
         });
         if (column === this.columns[0]) {
           window.setTimeout(() => {
@@ -47,6 +49,9 @@ export class AddWordModal extends Modal {
         });
       });
     }
+
+    this.errorEl = contentEl.createDiv({ cls: "obsictionary-modal-error" });
+    this.errorEl.hide();
 
     new Setting(contentEl).addButton((btn) => {
       btn
@@ -61,12 +66,19 @@ export class AddWordModal extends Modal {
   private submit(): void {
     const values: Record<string, string> = {};
     for (const column of this.columns) values[column] = sanitizeCell(this.draft[column] ?? "");
-    if (!hasContent(values, this.columns)) {
-      new Notice("Nothing to add.");
+    const missing = missingColumns(values, this.columns);
+    if (missing.length > 0) {
+      this.showError(`Fill in every field — ${missing.join(", ")} left empty.`);
       return;
     }
-    this.result = fillMissing(values, this.columns);
+    this.result = values;
     this.close();
+  }
+
+  private showError(message: string): void {
+    if (!this.errorEl) return;
+    this.errorEl.setText(message);
+    this.errorEl.show();
   }
 
   override onClose(): void {

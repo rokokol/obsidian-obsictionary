@@ -32,12 +32,32 @@ function appendMedia(app: App, el: HTMLElement, file: TFile): void {
   }
 }
 
+type Segment = { media: TFile } | { text: string };
+
+/** Split a value into ordered text runs and media-attachment embeds. */
+function segment(app: App, value: string, sourcePath: string): Segment[] {
+  const segments: Segment[] = [];
+  let cursor = 0;
+  for (const match of value.matchAll(EMBED_RE)) {
+    const linkpath = match[1];
+    if (!linkpath) continue;
+    const file = resolveMedia(app, linkpath.trim(), sourcePath);
+    if (!file) continue; // non-media embeds stay inside the surrounding text run
+    const start = match.index;
+    if (start > cursor) segments.push({ text: value.slice(cursor, start) });
+    segments.push({ media: file });
+    cursor = start + match[0].length;
+  }
+  if (cursor < value.length) segments.push({ text: value.slice(cursor) });
+  return segments;
+}
+
 /**
- * Render a dictionary cell value. When the value is nothing but attachment
- * embeds (`![[a.png]] ![[b.mp3]]`), each is drawn as a native <img>/<audio>/
- * <video> element — deliberately bypassing embed post-processors like
- * media-extended, which break inside this custom view. Anything else (text,
- * note transclusions, mixed content) goes through the normal markdown renderer.
+ * Render a dictionary cell value. Attachment embeds (`![[a.png]]`, `![[b.mp3]]`)
+ * are drawn as native <img>/<audio>/<video> elements — deliberately bypassing
+ * embed post-processors like media-extended, which break inside this custom view
+ * — while surrounding text (and note transclusions) goes through the normal
+ * markdown renderer. DOM order is preserved even though rendering is async.
  */
 export function renderCellValue(
   app: App,
@@ -46,16 +66,18 @@ export function renderCellValue(
   sourcePath: string,
   component: Component,
 ): void {
-  const trimmed = value.trim();
-  const embeds = [...trimmed.matchAll(EMBED_RE)];
-  const onlyEmbeds = embeds.length > 0 && trimmed.replace(EMBED_RE, "").trim() === "";
-  const files = onlyEmbeds
-    ? embeds.map((m) => resolveMedia(app, (m[1] ?? "").trim(), sourcePath))
-    : [];
-
-  if (onlyEmbeds && files.every((f): f is TFile => f !== null)) {
-    for (const file of files) appendMedia(app, el, file);
+  const segments = segment(app, value, sourcePath);
+  const hasMedia = segments.some((s) => "media" in s);
+  if (!hasMedia) {
+    void MarkdownRenderer.render(app, value, el, sourcePath, component);
     return;
   }
-  void MarkdownRenderer.render(app, value, el, sourcePath, component);
+  for (const seg of segments) {
+    if ("media" in seg) {
+      appendMedia(app, el, seg.media);
+    } else if (seg.text.trim() !== "") {
+      const wrapper = el.createDiv({ cls: "obsictionary-cell-text" });
+      void MarkdownRenderer.render(app, seg.text, wrapper, sourcePath, component);
+    }
+  }
 }

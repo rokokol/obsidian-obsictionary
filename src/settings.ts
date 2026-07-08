@@ -1,4 +1,4 @@
-import { DUE_COLUMN, isManagedColumn, PLUGIN_KEYS, SRS_COLUMN } from "./model/dictionary";
+import { isManagedColumn } from "./model/dictionary";
 
 /** Columns a fresh dictionary starts with — the first is the card front / key. */
 export const DEFAULT_COLUMNS = ["word", "transcription", "translation"];
@@ -65,29 +65,13 @@ export const DEFAULT_SETTINGS: ObsictionarySettings = {
   properties: [...DEFAULT_DISPLAYED_PROPERTIES],
 };
 
-/**
- * Keys the plugin owns and manages — never shown as user "properties" and
- * rejected by the Displayed-properties setting. Everything else (graph edges,
- * related, tags, arbitrary fields) is user-manageable.
- */
-export const FORBIDDEN_PROPERTY_KEYS: ReadonlySet<string> = new Set<string>([
-  ...PLUGIN_KEYS,
-  SRS_COLUMN,
-  DUE_COLUMN,
-  "position",
-]);
-
-export function isForbiddenProperty(key: string): boolean {
-  return FORBIDDEN_PROPERTY_KEYS.has(key);
-}
-
-/** Parse a user-typed list (commas/newlines) into clean, non-forbidden keys. */
+/** Parse a user-typed list (commas/newlines) into a clean, deduped key list. */
 export function sanitizePropertyKeys(input: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of input.split(/[\n,]/)) {
     const key = raw.trim();
-    if (key === "" || isForbiddenProperty(key) || seen.has(key)) continue;
+    if (key === "" || seen.has(key)) continue;
     seen.add(key);
     out.push(key);
   }
@@ -96,7 +80,7 @@ export function sanitizePropertyKeys(input: string): string[] {
 
 /**
  * Pick the frontmatter entries to display. `allow` is the configured order;
- * empty means "show all". System keys are already excluded from `entries`.
+ * empty means "show all".
  */
 export function selectProperties(
   entries: [string, unknown][],

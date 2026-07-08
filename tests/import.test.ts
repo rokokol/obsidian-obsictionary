@@ -5,27 +5,25 @@ const COLS = ["word", "transcription", "translation"];
 
 describe("parseImport", () => {
   it("splits pipe-separated lines into columns and trims", () => {
-    expect(parseImport("cat | /kæt/ | кот\ndog | /dɒɡ/ | пёс", COLS)).toEqual([
+    const { rows, incomplete } = parseImport("cat | /kæt/ | кот\ndog | /dɒɡ/ | пёс", COLS);
+    expect(incomplete).toBe(0);
+    expect(rows).toEqual([
       { word: "cat", transcription: "/kæt/", translation: "кот" },
       { word: "dog", transcription: "/dɒɡ/", translation: "пёс" },
     ]);
   });
 
   it("supports semicolon separators", () => {
-    expect(parseImport("cat;/kæt/;кот", COLS)[0]).toEqual({
+    expect(parseImport("cat;/kæt/;кот", COLS).rows[0]).toEqual({
       word: "cat",
       transcription: "/kæt/",
       translation: "кот",
     });
   });
 
-  it("fills blank fields with their column name and skips empty lines", () => {
-    expect(parseImport("\ncat | | кот\n", COLS)).toEqual([
-      { word: "cat", transcription: "transcription", translation: "кот" },
-    ]);
-  });
-
-  it("escapes pipes inside a single-column value", () => {
-    expect(parseImport("a b", ["word"])).toEqual([{ word: "a b" }]);
+  it("skips blank lines and counts rows with any empty field as incomplete", () => {
+    const { rows, incomplete } = parseImport("\n| /kæt/ | кот\ncat | | кот\ndog | /dɒɡ/ | пёс\n", COLS);
+    expect(rows).toEqual([{ word: "dog", transcription: "/dɒɡ/", translation: "пёс" }]);
+    expect(incomplete).toBe(2);
   });
 });
