@@ -16,13 +16,15 @@ function formatInterval(now: Date, due: Date): string {
   return `${Math.round(ms / 86400000).toString()}d`;
 }
 
-/** Flashcard review session over a fixed list of due items. */
+/** Flashcard review session over a fixed list of items. */
 export class ReviewModal extends Modal {
   private readonly items: ReviewItem[];
   private readonly retention: number;
   private readonly renderComponent = new Component();
   private index = 0;
   private revealed = false;
+  /** Set while a grade is being written, to keep a second one from starting. */
+  private grading = false;
 
   constructor(app: App, items: ReviewItem[], retention: number) {
     super(app);
@@ -43,14 +45,19 @@ export class ReviewModal extends Modal {
   }
 
   private registerKeys(): void {
-    this.scope.register([], " ", () => {
-      if (!this.revealed) this.reveal();
+    this.scope.register([], " ", (evt) => {
+      // Space both reveals and advances practice cards, so without this a held
+      // key would race through the session, discarding a card every other repeat.
+      if (evt.repeat) return false;
+      if (this.revealed) this.advanceUngraded();
+      else this.reveal();
       return false;
     });
     (["1", "2", "3", "4"] as const).forEach((key, i) => {
-      this.scope.register([], key, () => {
+      this.scope.register([], key, (evt) => {
+        if (evt.repeat) return false;
         const rating = REVIEW_RATINGS[i];
-        if (this.revealed && rating) void this.grade(rating);
+        if (this.revealed && rating && this.currentItem()?.record === true) void this.grade(rating);
         return false;
       });
     });
@@ -58,6 +65,34 @@ export class ReviewModal extends Modal {
 
   private currentItem(): ReviewItem | undefined {
     return this.items[this.index];
+  }
+
+  /** Columns of `item` that would actually render — blank cells show nothing. */
+  private static filled(item: ReviewItem, columns: readonly string[]): string[] {
+    return columns.filter((col) => (item.fields[col] ?? "").trim() !== "");
+  }
+
+  /**
+   * Render a set of columns. Answers are always labeled; a single-column question
+   * renders bare, since a lone "word: ubiquitous" label would be noise.
+   */
+  private renderFields(
+    container: HTMLElement,
+    item: ReviewItem,
+    columns: readonly string[],
+    labelled: boolean,
+  ): void {
+    for (const col of ReviewModal.filled(item, columns)) {
+      const value = item.fields[col] ?? "";
+      const target = labelled
+        ? container.createDiv({ cls: "obsictionary-review-field" })
+        : container;
+      if (labelled) target.createDiv({ cls: "obsictionary-review-field-name", text: col });
+      const valueEl = labelled
+        ? target.createDiv({ cls: "obsictionary-review-field-value" })
+        : target;
+      renderCellValue(this.app, valueEl, value, item.file.path, this.renderComponent);
+    }
   }
 
   private renderCard(): void {
@@ -77,10 +112,20 @@ export class ReviewModal extends Modal {
     });
 
     const front = contentEl.createDiv({ cls: "obsictionary-review-front" });
-    renderCellValue(this.app, front, item.frontValue, item.file.path, this.renderComponent);
+    // Decide from what will actually render: a two-column question whose second
+    // cell is blank should look like a one-column question, not gain a label.
+    const asked = ReviewModal.filled(item, item.frontColumns);
+    this.renderFields(front, item, item.frontColumns, asked.length > 1);
 
     contentEl.createDiv({ cls: "obsictionary-review-back" });
     const controls = contentEl.createDiv({ cls: "obsictionary-review-controls" });
+
+    // A card whose answer would render nothing — a question covering every column,
+    // or a row with only blank answers — has nothing to hide, so skip the step.
+    if (ReviewModal.filled(item, item.backColumns).length === 0) {
+      this.reveal();
+      return;
+    }
     const showBtn = controls.createEl("button", {
       cls: "mod-cta",
       text: "Show answer",
@@ -93,22 +138,31 @@ export class ReviewModal extends Modal {
   private reveal(): void {
     const item = this.currentItem();
     if (!item || this.revealed) return;
-    this.revealed = true;
 
     const back = this.contentEl.querySelector<HTMLElement>(".obsictionary-review-back");
     const controls = this.contentEl.querySelector<HTMLElement>(".obsictionary-review-controls");
     if (!back || !controls) return;
+    this.revealed = true;
 
-    for (const col of item.backColumns) {
-      const value = item.fields[col] ?? "";
-      if (value.trim() === "") continue;
-      const field = back.createDiv({ cls: "obsictionary-review-field" });
-      field.createDiv({ cls: "obsictionary-review-field-name", text: col });
-      const valueEl = field.createDiv({ cls: "obsictionary-review-field-value" });
-      renderCellValue(this.app, valueEl, value, item.file.path, this.renderComponent);
+    this.renderFields(back, item, item.backColumns, true);
+    // The card turns over: the answer takes the question's place rather than
+    // piling up under it. A card with nothing to show keeps its question, since
+    // flipping to an empty face would just blank the modal.
+    if (ReviewModal.filled(item, item.backColumns).length > 0) {
+      this.contentEl.querySelector<HTMLElement>(".obsictionary-review-front")?.remove();
+    }
+    controls.empty();
+
+    // Practice runs do not touch the schedule, so grading would be theatre: the
+    // intervals on the rating buttons describe a card state that is never saved.
+    if (!item.record) {
+      const next = controls.createEl("button", { cls: "mod-cta", text: "Next" });
+      next.addEventListener("click", () => {
+        this.advanceUngraded();
+      });
+      return;
     }
 
-    controls.empty();
     const now = new Date();
     const preview = previewDueDates(item.card, this.retention, now);
     for (const rating of REVIEW_RATINGS) {
@@ -123,23 +177,38 @@ export class ReviewModal extends Modal {
     }
   }
 
-  private async grade(rating: ReviewRating): Promise<void> {
-    const item = this.currentItem();
-    if (!item) return;
-    const next = review(item.card, rating, this.retention);
-    await writeReview(this.app, item, next);
+  /** Move on without recording anything (practice runs). */
+  private advanceUngraded(): void {
+    if (this.currentItem()?.record !== false) return;
     this.index += 1;
     this.renderCard();
+  }
+
+  /**
+   * Grade the current card and move on. The reentrancy flag matters because the
+   * index only advances after the write resolves: without it a repeated key or a
+   * double-click starts a second grade on the same card, writing it twice and
+   * skipping the next one.
+   */
+  private async grade(rating: ReviewRating): Promise<void> {
+    const item = this.currentItem();
+    if (!item?.record || this.grading) return;
+    this.grading = true;
+    try {
+      const next = review(item.card, rating, this.retention);
+      await writeReview(this.app, item, next);
+      this.index += 1;
+      this.renderCard();
+    } finally {
+      this.grading = false;
+    }
   }
 
   private renderDone(): void {
     const { contentEl } = this;
     contentEl.createDiv({
       cls: "obsictionary-review-done",
-      text:
-        this.items.length === 0
-          ? "No cards due — you're all caught up."
-          : `Review complete — ${this.items.length.toString()} cards.`,
+      text: `Review complete — ${this.items.length.toString()} cards.`,
     });
     const controls = contentEl.createDiv({ cls: "obsictionary-review-controls" });
     const close = controls.createEl("button", { cls: "mod-cta", text: "Close" });

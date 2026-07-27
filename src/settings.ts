@@ -1,11 +1,15 @@
-import { isManagedColumn } from "./model/dictionary";
+import { contentColumns, isManagedColumn } from "./model/dictionary";
 
 /** Columns a fresh dictionary starts with — the first is the card front / key. */
 export const DEFAULT_COLUMNS = ["word", "transcription", "translation"];
 
-/** The "front" column of a dictionary: the first non-managed header (the key). */
+/**
+ * The "front" column of a dictionary: the first non-managed header (the key), or
+ * "" when the table carries nothing but managed columns. Callers treat "" as
+ * "this is not a usable words table".
+ */
 export function frontColumnFor(headers: string[]): string {
-  return headers.find((h) => !isManagedColumn(h)) ?? headers[0] ?? "";
+  return contentColumns(headers)[0] ?? "";
 }
 
 /** Split a user-typed list (commas/newlines) into trimmed, deduped keys. */

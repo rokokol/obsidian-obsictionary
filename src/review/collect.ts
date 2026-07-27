@@ -1,46 +1,89 @@
 import type { App, TFile } from "obsidian";
 import type { Card } from "ts-fsrs";
-import { contentColumns, DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
-import { cardFromCell, dueDateString, encodeCard, isDue } from "../model/srs";
-import { readDictionary, updateWordsTable } from "../obsidian/dictionaryFile";
-import { frontColumnFor } from "../settings";
+import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
+import type { ReviewOrder, ReviewPool } from "../model/dictionaryConfig";
+import { cardFromCell, dueDateString, encodeCard } from "../model/srs";
+import { readDictionary, updateWordsTable, type DictionaryDoc } from "../obsidian/dictionaryFile";
+import { selectsCard, type ReviewOptions } from "./options";
 
 export interface ReviewItem {
   file: TFile;
   rowIndex: number;
-  /** Name of the front column. */
-  front: string;
-  /** Raw markdown cell text for the front column. */
-  frontValue: string;
-  /** Back content columns in order (excludes front and managed columns). */
-  backColumns: string[];
+  /**
+   * Columns asked before the reveal, and answered after it. Carried per item
+   * rather than per session: a vault-wide review spans dictionaries with
+   * different columns and different presets. Rows of one dictionary share these
+   * arrays, hence readonly.
+   */
+  frontColumns: readonly string[];
+  backColumns: readonly string[];
+  /** Whether grading this card writes back to `srs`/`due`. */
+  record: boolean;
   /** Raw markdown cell text keyed by content column. */
   fields: Record<string, string>;
   card: Card;
 }
 
-/** Gather all due review items across the given dictionary files. */
-export async function gatherDue(app: App, files: TFile[], now: Date): Promise<ReviewItem[]> {
+/** Decides how a given dictionary is reviewed, from its own headers and config. */
+export type ResolveOptions = (doc: DictionaryDoc, headers: string[]) => ReviewOptions;
+
+export interface GatherResult {
+  items: ReviewItem[];
+  /**
+   * Shuffled when any dictionary in the session asked for it. A session has one
+   * order, and there is no principled way to pick a winner among dictionaries —
+   * so "someone wanted it shuffled" decides.
+   */
+  order: ReviewOrder;
+  /** "due" only when every dictionary drew from its due cards. */
+  pool: ReviewPool;
+}
+
+/**
+ * Gather the cards to review across the given dictionaries, in file order. Each
+ * dictionary resolves its own layout and card pool; shuffling is left to the
+ * caller, so that a vault-wide session mixes dictionaries rather than shuffling
+ * each in place.
+ */
+export async function gatherCards(
+  app: App,
+  files: TFile[],
+  now: Date,
+  resolve: ResolveOptions,
+): Promise<GatherResult> {
   const items: ReviewItem[] = [];
+  let order: ReviewOrder = "file";
+  let pool: ReviewPool = "due";
+
   for (const file of files) {
     const doc = await readDictionary(app, file);
     if (!doc?.table) continue;
     const { headers, rows } = doc.table;
-    const front = frontColumnFor(headers);
-    const contentCols = contentColumns(headers);
-    const backColumns = contentCols.filter((h) => h !== front);
+    const options = resolve(doc, headers);
+    if (options.frontColumns.length === 0) continue;
+    if (options.order === "shuffled") order = "shuffled";
+    if (options.pool === "all") pool = "all";
+    const columns = [...options.frontColumns, ...options.backColumns];
 
     rows.forEach((row, rowIndex) => {
-      const frontValue = (row[front] ?? "").trim();
-      if (frontValue === "") return;
+      const asked = options.frontColumns.some((col) => (row[col] ?? "").trim() !== "");
+      if (!asked) return;
       const card = cardFromCell(row[SRS_COLUMN] ?? "", now);
-      if (!isDue(card, now)) return;
+      if (!selectsCard(card, options, now)) return;
       const fields: Record<string, string> = {};
-      for (const col of contentCols) fields[col] = row[col] ?? "";
-      items.push({ file, rowIndex, front, frontValue, backColumns, fields, card });
+      for (const col of columns) fields[col] = row[col] ?? "";
+      items.push({
+        file,
+        rowIndex,
+        frontColumns: options.frontColumns,
+        backColumns: options.backColumns,
+        record: options.record,
+        fields,
+        card,
+      });
     });
   }
-  return items;
+  return { items, order, pool };
 }
 
 /** Persist a reviewed card back into its row's `srs` (and mirror `due`). */

@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { sanitizePropertyKeys, selectProperties } from "../src/settings";
+import { frontColumnFor, sanitizePropertyKeys, selectProperties } from "../src/settings";
+
+describe("frontColumnFor", () => {
+  it("takes the first non-managed header", () => {
+    expect(frontColumnFor(["word", "translation", "due", "srs"])).toBe("word");
+  });
+
+  it("skips managed columns wherever they sit", () => {
+    expect(frontColumnFor(["due", "srs", "word", "translation"])).toBe("word");
+  });
+
+  it("is empty for a table with nothing but managed columns", () => {
+    // Callers read "" as "not a usable words table", so it must not fall back to
+    // a managed header.
+    expect(frontColumnFor(["due", "srs"])).toBe("");
+    expect(frontColumnFor([])).toBe("");
+  });
+});
 
 describe("sanitizePropertyKeys", () => {
   it("splits on commas and newlines, trims, and dedupes", () => {

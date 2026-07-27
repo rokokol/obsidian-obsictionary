@@ -127,11 +127,17 @@
   padding: var(--size-4-6) 0;
 }
 
+/* The answer replaces the question, so it sits where the question was. */
 .obsictionary-review-back {
   display: flex;
   flex-direction: column;
   gap: var(--size-4-2);
-  padding-bottom: var(--size-4-4);
+  padding: var(--size-4-6) 0 var(--size-4-4);
+}
+
+/* Nothing to reveal: the question stays, so claim no space. */
+.obsictionary-review-back:empty {
+  padding: 0;
 }
 
 .obsictionary-review-field {
@@ -260,6 +266,43 @@ body.obsictionary-hide-status .status-bar {
   align-items: center;
   gap: var(--size-4-1);
   cursor: pointer;
+}
+
+/* A tool button with its options caret tucked into the bottom-right corner. */
+.obsictionary-tool-split {
+  position: relative;
+  display: inline-flex;
+}
+
+.obsictionary-tool-split .obsictionary-tool,
+.obsictionary-tool-split .obsictionary-review-btn {
+  padding-right: var(--size-4-5);
+}
+
+.obsictionary-tool-caret {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: var(--size-4-4);
+  height: var(--size-4-4);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.obsictionary-tool-caret:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+.obsictionary-tool-caret svg {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
 }
 
 .obsictionary-tool-icon {
@@ -431,6 +474,71 @@ body.obsictionary-hide-status .status-bar {
 
 /* Modal validation message */
 .obsictionary-modal-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  margin-top: var(--size-4-2);
+}
+
+/* Review options dialog */
+.obsictionary-options-section {
+  margin: var(--size-4-3) 0;
+}
+
+.obsictionary-options-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-4-1);
+}
+
+.obsictionary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+}
+
+.obsictionary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  padding: var(--size-4-1) var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.obsictionary-chip:hover {
+  border-color: var(--background-modifier-border-hover);
+}
+
+.obsictionary-chip.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.obsictionary-chip-note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  margin-left: var(--size-4-1);
+}
+
+.obsictionary-chip-menu {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.obsictionary-chip-menu:hover {
+  color: var(--text-normal);
+}
+
+.obsictionary-chip-menu svg {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.obsictionary-options-warning {
   color: var(--text-error);
   font-size: var(--font-ui-small);
   margin-top: var(--size-4-2);

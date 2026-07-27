@@ -31,7 +31,7 @@ import { renderDictionaryMeta } from "../render/meta";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
 import { frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
 import { ConfirmModal } from "../ui/confirmModal";
-import { promptAddWord, promptImportWords, startReviewSession } from "../ui/prompts";
+import { promptAddWord, promptImportWords, promptReview, quickReview } from "../ui/prompts";
 import { errorMessage } from "../util";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
@@ -301,9 +301,17 @@ export class DictionaryEditorView extends ItemView {
     this.toolButton(bar, "clipboard-paste", "Import", () => {
       this.promptImport(file, doc);
     });
-    this.toolButton(bar, "play", "Review", () => {
-      void this.review(file);
-    });
+    this.splitToolButton(
+      bar,
+      "play",
+      "Review",
+      () => {
+        void this.review(file);
+      },
+      () => {
+        void this.reviewWithOptions(file);
+      },
+    );
     bar.createDiv({ cls: "obsictionary-view-toolbar-spacer" });
     this.renderSortControl(bar);
   }
@@ -331,12 +339,38 @@ export class DictionaryEditorView extends ItemView {
     icon: string,
     label: string,
     onClick: (evt: MouseEvent) => void,
-  ): void {
+  ): HTMLButtonElement {
     const btn = bar.createEl("button", { cls: "obsictionary-tool" });
     const iconEl = btn.createSpan({ cls: "obsictionary-tool-icon" });
     setIcon(iconEl, icon);
     btn.createSpan({ text: label });
     btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  /**
+   * A tool button with a caret in its corner: the button does the common thing
+   * straight away, the caret opens the dialog for everything else. The caret is
+   * its own button so it has its own hit area.
+   */
+  private splitToolButton(
+    bar: HTMLElement,
+    icon: string,
+    label: string,
+    onClick: () => void,
+    onCaret: (evt: MouseEvent) => void,
+  ): void {
+    const wrap = bar.createDiv({ cls: "obsictionary-tool-split" });
+    this.toolButton(wrap, icon, label, onClick);
+    const caret = wrap.createEl("button", {
+      cls: "obsictionary-tool-caret",
+      attr: { "aria-label": `${label} options` },
+    });
+    setIcon(caret, "chevron-down");
+    caret.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      onCaret(evt);
+    });
   }
 
   private renderStatsPanel(root: HTMLElement, doc: DictionaryDoc, front: string): void {
@@ -576,6 +610,10 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private async review(file: TFile): Promise<void> {
-    await startReviewSession(this.app, [file], this.plugin.settings.fsrsRetention);
+    await quickReview(this.app, [file], this.plugin.settings.fsrsRetention);
+  }
+
+  private async reviewWithOptions(file: TFile): Promise<void> {
+    await promptReview(this.app, [file], this.plugin.settings.fsrsRetention);
   }
 }

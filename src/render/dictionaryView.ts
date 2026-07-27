@@ -1,8 +1,11 @@
-import type { MarkdownPostProcessorContext } from "obsidian";
+import { setIcon, type MarkdownPostProcessorContext } from "obsidian";
 import { isManagedColumn, SRS_COLUMN } from "../model/dictionary";
 import { DICTIONARY_TAG } from "../obsidian/dictionaryFile";
 import { frontColumnFor } from "../settings";
 import { renderDictionaryMeta } from "./meta";
+
+/** Whether the Review button was pressed, or its options caret. */
+export type ReviewMode = "quick" | "options";
 
 function getFrontmatter(ctx: MarkdownPostProcessorContext): Record<string, unknown> | null {
   const fm: unknown = ctx.frontmatter;
@@ -73,7 +76,7 @@ function moveChildren(from: Element, to: HTMLElement): void {
 export function renderDictionary(
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
-  onReview?: (sourcePath: string) => void,
+  onReview?: (sourcePath: string, mode: ReviewMode) => void,
   allowProperties: string[] = [],
 ): void {
   const fm = getFrontmatter(ctx);
@@ -93,9 +96,19 @@ export function renderDictionary(
 
     if (onReview) {
       const toolbar = container.createDiv({ cls: "obsictionary-toolbar" });
-      const btn = toolbar.createEl("button", { cls: "obsictionary-review-btn", text: "Review" });
+      const split = toolbar.createDiv({ cls: "obsictionary-tool-split" });
+      const btn = split.createEl("button", { cls: "obsictionary-review-btn", text: "Review" });
       btn.addEventListener("click", () => {
-        onReview(ctx.sourcePath);
+        onReview(ctx.sourcePath, "quick");
+      });
+      const caret = split.createEl("button", {
+        cls: "obsictionary-tool-caret",
+        attr: { "aria-label": "Review options" },
+      });
+      setIcon(caret, "chevron-down");
+      caret.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        onReview(ctx.sourcePath, "options");
       });
     }
 

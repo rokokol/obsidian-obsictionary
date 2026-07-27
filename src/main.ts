@@ -3,10 +3,10 @@ import { createDictionaryNote } from "./commands/dictionaryCommands";
 import { DictionaryCache } from "./obsidian/cache";
 import { isDictionaryFile, readDictionary } from "./obsidian/dictionaryFile";
 import { parseWikilink } from "./render/blocks";
-import { renderDictionary } from "./render/dictionaryView";
+import { renderDictionary, type ReviewMode } from "./render/dictionaryView";
 import { renderStats } from "./render/statsView";
 import { DEFAULT_SETTINGS, type ObsictionarySettings } from "./settings";
-import { promptAddWord, promptImportWords, startReviewSession } from "./ui/prompts";
+import { promptAddWord, promptImportWords, promptReview, quickReview } from "./ui/prompts";
 import { ObsictionarySettingTab } from "./ui/settingsTab";
 import { DICTIONARY_VIEW_TYPE, DictionaryEditorView } from "./view/dictionaryEditorView";
 
@@ -59,8 +59,8 @@ export default class ObsictionaryPlugin extends Plugin {
       renderDictionary(
         el,
         ctx,
-        (sourcePath) => {
-          void this.reviewByPath(sourcePath);
+        (sourcePath, mode) => {
+          void this.reviewByPath(sourcePath, mode);
         },
         this.settings.properties,
       );
@@ -93,7 +93,15 @@ export default class ObsictionaryPlugin extends Plugin {
       id: "review-due",
       name: "Review due cards",
       callback: () => {
-        void this.startReview();
+        void this.startReview("quick");
+      },
+    });
+
+    this.addCommand({
+      id: "review-with-options",
+      name: "Review with options…",
+      callback: () => {
+        void this.startReview("options");
       },
     });
 
@@ -182,16 +190,16 @@ export default class ObsictionaryPlugin extends Plugin {
     await this.app.workspace.getLeaf(true).openFile(file);
   }
 
-  private async startReview(): Promise<void> {
+  private async startReview(mode: ReviewMode): Promise<void> {
     if (this.settings.reviewScope === "note") {
       const active = this.activeDictionaryFile();
       if (!active) {
         new Notice("Open a dictionary note to review it.");
         return;
       }
-      await this.reviewFiles([active]);
+      await this.reviewFiles([active], mode);
     } else {
-      await this.reviewFiles(this.cache.files());
+      await this.reviewFiles(this.cache.files(), mode);
     }
   }
 
@@ -292,13 +300,14 @@ export default class ObsictionaryPlugin extends Plugin {
     return file && isDictionaryFile(this.app, file) ? [file] : [];
   }
 
-  private async reviewByPath(sourcePath: string): Promise<void> {
+  private async reviewByPath(sourcePath: string, mode: ReviewMode): Promise<void> {
     const [file] = this.filesFromPath(sourcePath);
-    if (file) await this.reviewFiles([file]);
+    if (file) await this.reviewFiles([file], mode);
   }
 
-  private async reviewFiles(files: TFile[]): Promise<void> {
-    await startReviewSession(this.app, files, this.settings.fsrsRetention);
+  private async reviewFiles(files: TFile[], mode: ReviewMode): Promise<void> {
+    const start = mode === "options" ? promptReview : quickReview;
+    await start(this.app, files, this.settings.fsrsRetention);
   }
 
   /** Re-render every open dictionary view (after a settings change). */
