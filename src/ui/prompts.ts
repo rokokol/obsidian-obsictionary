@@ -5,8 +5,8 @@ import { appendWord, appendWords, contentColumnsOf } from "../commands/dictionar
 import { contentColumns } from "../model/dictionary";
 import { emptyConfig, type ReviewOrder } from "../model/dictionaryConfig";
 import { readDictionary, type DictionaryDoc } from "../obsidian/dictionaryFile";
-import { gatherCards, type ResolveOptions } from "../review/collect";
-import { quickOptions, shuffle } from "../review/options";
+import { gatherCards, type GatherResult, type ResolveOptions } from "../review/collect";
+import { applySlice, quickOptions, shuffle, type ReviewSlice } from "../review/options";
 import { AddWordModal } from "./addWordModal";
 import { ImportWordsModal } from "./importWordsModal";
 import { ReviewModal } from "./reviewModal";
@@ -50,6 +50,13 @@ export interface ReviewSession {
   order: ReviewOrder | null;
 }
 
+/** Why a session collected nothing — the pool and filter that were asked for. */
+function emptyReason(gathered: GatherResult): string {
+  if (gathered.filtered) return "No cards match that filter.";
+  if (gathered.pool === "due") return "No cards due for review.";
+  return "Nothing to review — no words found.";
+}
+
 /**
  * Collect and run a review session, or say why it came up empty. Shuffling
  * happens here rather than per dictionary, so a vault-wide session interleaves
@@ -62,9 +69,7 @@ export async function startReviewSession(
 ): Promise<void> {
   const gathered = await gatherCards(app, files, new Date(), session.resolve);
   if (gathered.items.length === 0) {
-    new Notice(
-      gathered.pool === "due" ? "No cards due for review." : "Nothing to review — no words found.",
-    );
+    new Notice(emptyReason(gathered));
     return;
   }
   const order = session.order ?? gathered.order;
@@ -81,6 +86,20 @@ export async function quickReview(app: App, files: TFile[], retention: number): 
     retention,
     order: null,
     resolve: (doc, headers) => quickOptions(doc.frontmatter.config, headers),
+  });
+}
+
+/** Review one slice of the cards — what clicking a stats tile does. */
+export async function reviewSlice(
+  app: App,
+  files: TFile[],
+  retention: number,
+  slice: ReviewSlice,
+): Promise<void> {
+  await startReviewSession(app, files, {
+    retention,
+    order: null,
+    resolve: (doc, headers) => applySlice(quickOptions(doc.frontmatter.config, headers), slice),
   });
 }
 
@@ -107,15 +126,15 @@ export async function promptReview(app: App, files: TFile[], retention: number):
         order: choice.order,
         resolve: (dictionary, dictionaryHeaders) => {
           // Without a shared column set, each dictionary keeps its own layout and
-          // only the session-wide choices are applied on top.
-          const base = choice.columns
-            ? { frontColumns: choice.columns.front, backColumns: choice.columns.back }
-            : quickOptions(dictionary.frontmatter.config, dictionaryHeaders);
+          // only the session-wide choices are applied on top. An order the user
+          // did not pick likewise stays the dictionary's own.
+          const base = quickOptions(dictionary.frontmatter.config, dictionaryHeaders);
+          const columns = choice.columns;
           return {
-            frontColumns: base.frontColumns,
-            backColumns: base.backColumns,
+            frontColumns: columns ? columns.front : base.frontColumns,
+            backColumns: columns ? columns.back : base.backColumns,
             pool: choice.pool,
-            order: choice.order,
+            order: choice.order ?? base.order,
             record: choice.record,
           };
         },

@@ -17,6 +17,7 @@ import {
   quickOptions,
   type ReviewOptions,
 } from "../review/options";
+import { errorMessage } from "../util";
 import { ConfirmModal } from "./confirmModal";
 
 /**
@@ -27,7 +28,8 @@ import { ConfirmModal } from "./confirmModal";
 export interface ReviewChoice {
   columns: { front: string[]; back: string[] } | null;
   pool: ReviewPool;
-  order: ReviewOrder;
+  /** Null when the user did not choose one — the dictionaries decide. */
+  order: ReviewOrder | null;
   record: boolean;
 }
 
@@ -53,7 +55,15 @@ export class ReviewOptionsModal extends Modal {
   private record: boolean;
   /** Name of the preset the current selection came from, for save/rename. */
   private source: string | null = null;
+  /**
+   * Whether the user actually picked an order. Without this, opening the dialog
+   * in vault scope and pressing Start would impose the seeded default on every
+   * dictionary, overriding ones that ask to shuffle.
+   */
+  private orderChosen = false;
   private naming = false;
+  /** Which control to refocus after a redraw: `side:column`, or a control name. */
+  private focus: string | null = null;
 
   constructor(
     app: App,
@@ -70,19 +80,22 @@ export class ReviewOptionsModal extends Modal {
     this.headers = headers;
     this.onStart = onStart;
 
-    // Open showing exactly what the quick button would have done.
     const options = quickOptions(config, headers);
     this.front = [...options.frontColumns];
     this.back = [...options.backColumns];
     this.pool = options.pool;
     this.order = options.order;
     this.record = options.record;
-    this.source = config.presets[0]?.name ?? null;
   }
 
   override onOpen(): void {
     this.modalEl.addClass("obsictionary-options-modal");
-    this.render();
+    // Open showing exactly what the quick button would have done — through the
+    // same path a click takes, so a preset naming a column the table has since
+    // lost is reported here too, not only when picked by hand.
+    const first = this.config.presets[0];
+    if (first) this.applyPreset(first, false);
+    else this.render();
   }
 
   override onClose(): void {
@@ -110,34 +123,43 @@ export class ReviewOptionsModal extends Modal {
     const row = section.createDiv({ cls: "obsictionary-chips" });
 
     this.config.presets.forEach((preset, index) => {
+      // A wrapper, not a button: the kebab is interactive and must not nest.
       const chip = row.createDiv({ cls: "obsictionary-chip is-preset" });
       if (preset.name === this.source) chip.addClass("is-active");
-      const label = chip.createSpan({ text: preset.name });
+      const label = chip.createEl("button", {
+        cls: "obsictionary-chip-label",
+        text: preset.name,
+      });
       if (index === 0) {
         label.createSpan({ cls: "obsictionary-chip-note", text: "quick" });
       }
-      chip.addEventListener("click", () => {
+      label.addEventListener("click", () => {
         this.applyPreset(preset);
       });
-      const menuBtn = chip.createSpan({
+      const menuBtn = chip.createEl("button", {
         cls: "obsictionary-chip-menu",
         attr: { "aria-label": `Options for ${preset.name}` },
       });
       setIcon(menuBtn, "more-vertical");
       menuBtn.addEventListener("click", (evt) => {
-        evt.stopPropagation();
         this.showPresetMenu(evt, preset);
       });
     });
   }
 
-  /** Load a preset into the form, reporting anything the table no longer has. */
-  private applyPreset(preset: ReviewPreset): void {
+  /**
+   * Load a preset into the form, reporting anything the table no longer has.
+   * `chosen` is false for the preset the dialog opens on: seeding the form is
+   * not the user picking an order, and in vault scope an order nobody picked
+   * must not be imposed on the other dictionaries.
+   */
+  private applyPreset(preset: ReviewPreset, chosen = true): void {
     const options = optionsFromPreset(preset, this.headers);
     this.front = [...options.frontColumns];
     this.back = [...options.backColumns];
     this.pool = options.pool;
     this.order = options.order;
+    this.orderChosen = chosen;
     this.record = options.record;
     this.source = preset.name;
 
@@ -180,6 +202,7 @@ export class ReviewOptionsModal extends Modal {
         .setIcon("trash")
         .onClick(() => {
           new ConfirmModal(this.app, `Delete preset "${preset.name}"?`, "Delete", () => {
+            if (this.source === preset.name) this.source = null;
             void this.mutate((config) => {
               removePreset(config, preset.name);
             });
@@ -224,11 +247,12 @@ export class ReviewOptionsModal extends Modal {
     section.createDiv({ cls: "obsictionary-options-label", text: label });
     const row = section.createDiv({ cls: "obsictionary-chips" });
     for (const column of this.columns) {
-      const chip = row.createDiv({ cls: "obsictionary-chip", text: column });
+      const chip = row.createEl("button", { cls: "obsictionary-chip", text: column });
       if (selected.includes(column)) chip.addClass("is-active");
       chip.addEventListener("click", () => {
         this.toggleColumn(side, column);
       });
+      this.restoreFocus(`${side}:${column}`, chip);
     }
   }
 
@@ -248,9 +272,9 @@ export class ReviewOptionsModal extends Modal {
       this.back = next;
       if (next.includes(column)) this.front = this.front.filter((c) => c !== column);
     }
-    // A preset the user has edited is no longer that preset.
-    this.source = null;
-    this.render();
+    // Focus first: `edited` redraws, and the redraw is what places the cursor.
+    this.focus = `${side}:${column}`;
+    this.edited();
   }
 
   private renderSessionSettings(parent: HTMLElement): void {
@@ -266,8 +290,10 @@ export class ReviewOptionsModal extends Modal {
           // Going through every card is practice, so stop touching the schedule
           // by default. The toggle below still overrides it.
           this.record = this.pool === "due";
-          this.render();
+          this.focus = "pool";
+          this.edited();
         });
+        this.restoreFocus("pool", dropdown.selectEl);
       });
 
     new Setting(parent).setName("Order").addDropdown((dropdown) => {
@@ -276,18 +302,55 @@ export class ReviewOptionsModal extends Modal {
       dropdown.setValue(this.order);
       dropdown.onChange((value) => {
         this.order = value === "shuffled" ? "shuffled" : "file";
+        this.orderChosen = true;
+        this.focus = "order";
+        this.edited();
       });
+      this.restoreFocus("order", dropdown.selectEl);
     });
 
     new Setting(parent)
       .setName("Record progress")
       .setDesc("Off means grading does not reschedule anything.")
       .addToggle((toggle) => {
+        // Seed before subscribing, and keep it that way: `setValue` fires the
+        // change callback, and this one redraws — so subscribing first would
+        // make every render re-enter itself until the stack gives out.
         toggle.setValue(this.record);
         toggle.onChange((value) => {
           this.record = value;
+          this.focus = "record";
+          this.edited();
         });
+        this.restoreFocus("record", toggle.toggleEl);
       });
+  }
+
+  /**
+   * Put the cursor back on the control that caused the redraw — once. Every edit
+   * rebuilds the dialog, so without this a keyboard user is dropped to the top
+   * of the document on each change. The target is consumed because a later
+   * redraw has its own focus to place (the preset-name field), and a leftover
+   * key would keep yanking the cursor back out of it.
+   */
+  private restoreFocus(key: string, el: HTMLElement): void {
+    if (this.focus !== key) return;
+    this.focus = null;
+    window.setTimeout(() => {
+      el.focus();
+    }, 0);
+  }
+
+  /**
+   * The form no longer matches the preset it was loaded from, so stop claiming
+   * it does — the chip unhighlights and Save stops pre-filling that name, which
+   * is what keeps a Replace from silently rewriting a preset the user only
+   * loaded and tweaked. Both of those are drawn, so the redraw belongs here
+   * rather than at each call site, where it kept being forgotten.
+   */
+  private edited(): void {
+    this.source = null;
+    this.render();
   }
 
   private renderControls(parent: HTMLElement): void {
@@ -391,13 +454,25 @@ export class ReviewOptionsModal extends Modal {
   private async mutate(change: (config: DictionaryConfig) => void): Promise<void> {
     const file = this.file;
     if (!file) return;
-    const written = await updateDictionaryConfig(this.app, file, change);
-    if (written) change(this.config);
-    else {
-      new Notice(
-        "Could not save: this note's obsictionary property holds something other " +
-          "than a settings block. Clear or fix it first.",
-      );
+    try {
+      const written = await updateDictionaryConfig(this.app, file, change);
+      if (written) {
+        change(this.config);
+        // An unchosen order means "let the dictionary decide", resolved at start
+        // from whichever preset is quick *then*. Making another preset quick, or
+        // deleting the quick one, moves that answer out from under the form —
+        // which still shows the old one. Pin what the user is looking at.
+        this.orderChosen = true;
+      } else {
+        new Notice(
+          "Could not save: this note's obsictionary property holds something other " +
+            "than a settings block. Clear or fix it first.",
+        );
+      }
+    } catch (err) {
+      // The note can be deleted or its frontmatter left unparseable while the
+      // dialog is open; say so instead of dying as an unhandled rejection.
+      new Notice(`Could not save preset: ${errorMessage(err)}`);
     }
     this.render();
   }
@@ -408,7 +483,7 @@ export class ReviewOptionsModal extends Modal {
     this.onStart({
       columns: this.columns.length > 0 ? { front: [...this.front], back: [...this.back] } : null,
       pool: this.pool,
-      order: this.order,
+      order: this.orderChosen ? this.order : null,
       record: this.record,
     });
   }

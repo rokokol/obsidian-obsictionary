@@ -102,7 +102,10 @@ export async function updateWordsTable(
  * parser cannot read are carried through verbatim (`extra`/`unreadable`) — a
  * hand-written config survives an unrelated edit like a mute toggle.
  *
- * Returns false without writing when the note already has an `obsictionary` key
+ * Returns the config as written, so a caller that flips a flag can report what
+ * the flag became instead of guessing from a possibly stale metadata cache.
+ *
+ * Returns null without writing when the note already has an `obsictionary` key
  * holding something other than a mapping (a stray string, say): there is nowhere
  * to merge into, and overwriting it would destroy whatever the user put there.
  * Callers should tell the user rather than fail silently. An empty value is not
@@ -113,19 +116,17 @@ export async function updateDictionaryConfig(
   app: App,
   file: TFile,
   mutate: (config: DictionaryConfig) => void,
-): Promise<boolean> {
-  let written = true;
+): Promise<DictionaryConfig | null> {
+  let written: DictionaryConfig | null = null;
   await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
     const existing: unknown = frontmatter[CONFIG_KEY];
-    if (existing !== undefined && existing !== null && !isPlainObject(existing)) {
-      written = false;
-      return;
-    }
+    if (existing !== undefined && existing !== null && !isPlainObject(existing)) return;
     const config = parseDictionaryConfig(frontmatter);
     mutate(config);
     const value = toFrontmatterValue(config);
     if (value === null) Reflect.deleteProperty(frontmatter, CONFIG_KEY);
     else frontmatter[CONFIG_KEY] = value;
+    written = config;
   });
   return written;
 }

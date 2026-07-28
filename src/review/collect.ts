@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { Card } from "ts-fsrs";
+import { isCardRow } from "../model/cards";
 import { DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import type { ReviewOrder, ReviewPool } from "../model/dictionaryConfig";
 import { cardFromCell, dueDateString, encodeCard } from "../model/srs";
@@ -37,6 +38,8 @@ export interface GatherResult {
   order: ReviewOrder;
   /** "due" only when every dictionary drew from its due cards. */
   pool: ReviewPool;
+  /** Whether a state filter was applied, so an empty session can say why. */
+  filtered: boolean;
 }
 
 /**
@@ -54,6 +57,7 @@ export async function gatherCards(
   const items: ReviewItem[] = [];
   let order: ReviewOrder = "file";
   let pool: ReviewPool = "due";
+  let filtered = false;
 
   for (const file of files) {
     const doc = await readDictionary(app, file);
@@ -63,11 +67,11 @@ export async function gatherCards(
     if (options.frontColumns.length === 0) continue;
     if (options.order === "shuffled") order = "shuffled";
     if (options.pool === "all") pool = "all";
+    if (options.states && options.states.length > 0) filtered = true;
     const columns = [...options.frontColumns, ...options.backColumns];
 
     rows.forEach((row, rowIndex) => {
-      const asked = options.frontColumns.some((col) => (row[col] ?? "").trim() !== "");
-      if (!asked) return;
+      if (!isCardRow(row, options.frontColumns)) return;
       const card = cardFromCell(row[SRS_COLUMN] ?? "", now);
       if (!selectsCard(card, options, now)) return;
       const fields: Record<string, string> = {};
@@ -83,7 +87,7 @@ export async function gatherCards(
       });
     });
   }
-  return { items, order, pool };
+  return { items, order, pool, filtered };
 }
 
 /** Persist a reviewed card back into its row's `srs` (and mirror `due`). */

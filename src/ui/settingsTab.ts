@@ -111,5 +111,81 @@ export class ObsictionarySettingTab extends PluginSettingTab {
           void this.plugin.saveSettings();
         });
       });
+
+    this.renderReminders(containerEl);
+  }
+
+  private renderReminders(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Reminders").setHeading();
+
+    const { settings } = this.plugin;
+    // The switches below only mean anything while the master one is on, so they
+    // are built once and hidden in place rather than redrawing the whole tab.
+    const dependent: HTMLElement[] = [];
+    const syncDependent = (): void => {
+      for (const el of dependent) el.toggle(settings.remindersEnabled);
+    };
+
+    new Setting(containerEl)
+      .setName("Remind me about due cards")
+      .setDesc("Turn off to silence every reminder. Individual dictionaries can be muted too.")
+      .addToggle((toggle) => {
+        toggle.setValue(settings.remindersEnabled);
+        toggle.onChange((value) => {
+          settings.remindersEnabled = value;
+          void this.plugin.saveSettings();
+          this.plugin.remindersChanged();
+          syncDependent();
+        });
+      });
+
+    dependent.push(
+      new Setting(containerEl)
+        .setName("On start-up")
+        .setDesc("Show a notice when Obsidian opens with cards waiting.")
+        .addToggle((toggle) => {
+          toggle.setValue(settings.remindOnStartup);
+          toggle.onChange((value) => {
+            settings.remindOnStartup = value;
+            void this.plugin.saveSettings();
+          });
+        }).settingEl,
+    );
+
+    const repeat = new Setting(containerEl).setDesc(
+      "Hours between reminders while Obsidian stays open. Zero means only on start-up.",
+    );
+    const repeatName = (hours: number): string =>
+      hours === 0 ? "Repeat: only on start-up" : `Repeat every ${hours} h`;
+    repeat.setName(repeatName(settings.remindEveryHours)).addSlider((slider) => {
+      slider.setLimits(0, 12, 1).setValue(settings.remindEveryHours);
+      // Dragging fires per step, so the name follows the handle but the setting
+      // is only saved — and the reminder clock only re-armed — once it is let go.
+      slider.onChange((value) => {
+        repeat.setName(repeatName(value));
+      });
+      slider.sliderEl.addEventListener("change", () => {
+        settings.remindEveryHours = slider.getValue();
+        void this.plugin.saveSettings();
+        this.plugin.remindersChanged();
+      });
+    });
+    dependent.push(repeat.settingEl);
+
+    dependent.push(
+      new Setting(containerEl)
+        .setName("Status bar counter")
+        .setDesc("Show how many cards are due; click it to start reviewing.")
+        .addToggle((toggle) => {
+          toggle.setValue(settings.statusBarCounter);
+          toggle.onChange((value) => {
+            settings.statusBarCounter = value;
+            void this.plugin.saveSettings();
+            this.plugin.remindersChanged();
+          });
+        }).settingEl,
+    );
+
+    syncDependent();
   }
 }

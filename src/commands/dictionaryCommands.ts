@@ -1,4 +1,4 @@
-import { Notice, normalizePath, type App, type TFile } from "obsidian";
+import { Notice, normalizePath, type App, type TFile, type TFolder } from "obsidian";
 import { contentColumns, DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
 import { serializeTable, type MarkdownTable } from "../model/table";
 import {
@@ -75,11 +75,16 @@ function availablePath(app: App, folder: string, base: string): string {
 
 /**
  * Create a new, generic dictionary note (only the `#obsictionary` tag — no
- * vault-specific keys) with the given content columns, and return it.
+ * vault-specific keys) with the given content columns, and return it. Without a
+ * `parent` the note lands wherever Obsidian puts new notes.
  */
-export async function createDictionaryNote(app: App, columns: string[]): Promise<TFile> {
-  const parent = app.fileManager.getNewFileParent("");
-  const path = availablePath(app, parent.path, "New dictionary");
+export async function createDictionaryNote(
+  app: App,
+  columns: string[],
+  parent?: TFolder,
+): Promise<TFile> {
+  const folder = parent ?? app.fileManager.getNewFileParent("");
+  const path = availablePath(app, folder.path, "New dictionary");
   const headers = [...columns, DUE_COLUMN, SRS_COLUMN];
   const table: MarkdownTable = { headers, rows: [] };
   const content = [

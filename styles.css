@@ -230,11 +230,51 @@
   font-size: var(--font-ui-small);
 }
 
+/* A tile is a button only when it starts something. */
+.obsictionary-stat.is-clickable {
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.obsictionary-stat.is-clickable:hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.obsictionary-stats-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1) var(--size-4-3);
+  margin-bottom: var(--size-4-2);
+  font-size: var(--font-ui-small);
+}
+
+.obsictionary-stats-link {
+  cursor: pointer;
+}
+
 /* Hide Obsidian's status bar only while it is empty and a dictionary view is
    active — some themes paint the empty bar as a stray floating pill. The class
    is toggled on <body> from the plugin (which checks emptiness in JS). */
 body.obsictionary-hide-status .status-bar {
   display: none;
+}
+
+/* Due counter in the status bar. The plugin hides the item outright at zero, so
+   the rule above still sees an empty bar as empty. */
+.obsictionary-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+}
+
+.obsictionary-status-icon {
+  display: inline-flex;
+}
+
+.obsictionary-status-icon .svg-icon {
+  width: var(--icon-s);
+  height: var(--icon-s);
 }
 
 /* Editable view header title (renames the file) */
@@ -307,6 +347,11 @@ body.obsictionary-hide-status .status-bar {
 
 .obsictionary-tool-icon {
   display: inline-flex;
+}
+
+/* A tool button standing for a state that is currently on (muted reminders). */
+.obsictionary-tool.is-active {
+  color: var(--text-muted);
 }
 
 .obsictionary-tool-icon svg {
@@ -507,6 +552,21 @@ body.obsictionary-hide-status .status-bar {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   cursor: pointer;
+  box-shadow: none;
+}
+
+/* The preset chip wraps two buttons, so it is a plain box itself. */
+.obsictionary-chip.is-preset {
+  padding-right: var(--size-4-1);
+}
+
+.obsictionary-chip-label {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
 }
 
 .obsictionary-chip:hover {
@@ -526,7 +586,12 @@ body.obsictionary-hide-status .status-bar {
 
 .obsictionary-chip-menu {
   display: inline-flex;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--text-faint);
+  cursor: pointer;
 }
 
 .obsictionary-chip-menu:hover {
@@ -542,4 +607,72 @@ body.obsictionary-hide-status .status-bar {
   color: var(--text-error);
   font-size: var(--font-ui-small);
   margin-top: var(--size-4-2);
+}
+
+/* Dashboard */
+.obsictionary-dashboard {
+  padding: var(--size-4-4);
+  overflow-y: auto;
+}
+
+.obsictionary-dashboard-bar {
+  display: flex;
+  gap: var(--size-4-2);
+  margin: var(--size-4-4) 0;
+}
+
+.obsictionary-dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+.obsictionary-dashboard-table th {
+  text-align: left;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: var(--font-normal);
+  padding: var(--size-4-1) var(--size-4-2);
+}
+
+.obsictionary-dashboard-table td {
+  padding: var(--size-4-1) var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.obsictionary-dashboard-table tr.is-muted td {
+  color: var(--text-faint);
+}
+
+.obsictionary-dashboard-link {
+  cursor: pointer;
+}
+
+.obsictionary-dashboard-badge {
+  margin-left: var(--size-4-2);
+  padding: 0 var(--size-4-1);
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.obsictionary-dashboard-actions {
+  display: flex;
+  gap: var(--size-4-1);
+  justify-content: flex-end;
+}
+
+.obsictionary-dashboard-actions button {
+  padding: var(--size-4-1);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.obsictionary-dashboard-actions button:hover {
+  color: var(--text-normal);
 }

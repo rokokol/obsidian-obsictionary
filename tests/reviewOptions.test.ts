@@ -2,12 +2,14 @@ import { State } from "ts-fsrs";
 import { describe, expect, it } from "vitest";
 import type { DictionaryConfig, ReviewPreset } from "../src/model/dictionaryConfig";
 import {
+  applySlice,
   defaultOptions,
   optionsFromPreset,
   optionsToPreset,
   quickOptions,
   shuffle,
   type ReviewOptions,
+  type ReviewSlice,
 } from "../src/review/options";
 
 const HEADERS = ["word", "transcription", "translation", "due", "srs"];
@@ -182,6 +184,59 @@ describe("optionsToPreset", () => {
     const saved = optionsToPreset("Saved", { ...defaultOptions(HEADERS), states: [State.New] });
     expect(saved).not.toHaveProperty("states");
     expect(optionsFromPreset(saved, HEADERS)).not.toHaveProperty("states");
+  });
+});
+
+describe("applySlice", () => {
+  // The five stats tiles, exactly as the plugin builds them.
+  const TOTAL: ReviewSlice = { pool: "all", record: false };
+  const DUE: ReviewSlice = { pool: "due" };
+  const NEW: ReviewSlice = { pool: "all", states: [State.New] };
+
+  it("keeps the dictionary's own columns and order", () => {
+    const base = optionsFromPreset(preset({ order: "shuffled" }), HEADERS);
+    const sliced = applySlice(base, NEW);
+    expect(sliced.frontColumns).toEqual(base.frontColumns);
+    expect(sliced.backColumns).toEqual(base.backColumns);
+    expect(sliced.order).toBe("shuffled");
+  });
+
+  it("imposes the pool", () => {
+    const base = optionsFromPreset(preset({ pool: "all" }), HEADERS);
+    expect(applySlice(base, DUE).pool).toBe("due");
+  });
+
+  it("makes the Total tile practice: every card, nothing recorded", () => {
+    const sliced = applySlice(defaultOptions(HEADERS), TOTAL);
+    expect(sliced.pool).toBe("all");
+    expect(sliced.record).toBe(false);
+    expect(sliced).not.toHaveProperty("states");
+  });
+
+  it("leaves recording to the dictionary when the slice says nothing", () => {
+    const base = optionsFromPreset(preset({ record: false }), HEADERS);
+    expect(applySlice(base, DUE).record).toBe(false);
+  });
+
+  it("draws the state tiles from all cards, not just the due ones", () => {
+    const sliced = applySlice(defaultOptions(HEADERS), NEW);
+    expect(sliced.pool).toBe("all");
+    expect(sliced.states).toEqual([State.New]);
+    // A card in the Review state is often not due; filtering by due as well
+    // would offer fewer cards than the tile's own number promises.
+    expect(sliced.record).toBe(true);
+  });
+
+  it("does not mutate the options it narrows", () => {
+    const base = defaultOptions(HEADERS);
+    applySlice(base, NEW);
+    expect(base.pool).toBe("due");
+    expect(base).not.toHaveProperty("states");
+  });
+
+  it("replaces the filter rather than intersecting with an earlier one", () => {
+    const filtered = applySlice(defaultOptions(HEADERS), NEW);
+    expect(applySlice(filtered, DUE)).not.toHaveProperty("states");
   });
 });
 

@@ -60,6 +60,14 @@ export interface ObsictionarySettings {
    * Empty = show every non-system property (the original behavior).
    */
   properties: string[];
+  /** Master switch for every reminder below. */
+  remindersEnabled: boolean;
+  /** Notice on start-up when cards are waiting. */
+  remindOnStartup: boolean;
+  /** Repeat the notice every N hours; 0 = only on start-up. */
+  remindEveryHours: number;
+  /** Keep a due counter in the status bar. */
+  statusBarCounter: boolean;
 }
 
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
@@ -69,6 +77,10 @@ export const DEFAULT_SETTINGS: ObsictionarySettings = {
   defaultView: "dictionary",
   defaultSort: "manual",
   properties: [], // empty = render every property
+  remindersEnabled: true,
+  remindOnStartup: true,
+  remindEveryHours: 0,
+  statusBarCounter: true,
 };
 
 /** Parse a user-typed list (commas/newlines) into a clean, deduped key list. */

@@ -29,6 +29,7 @@ import { enhanceFieldInput } from "../obsidian/fieldInput";
 import { renderCellValue } from "../render/cellValue";
 import { renderDictionaryMeta } from "../render/meta";
 import { renderStatsGrid, statsForRows } from "../render/statsView";
+import { quickOptions } from "../review/options";
 import { frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
 import { ConfirmModal } from "../ui/confirmModal";
 import { promptAddWord, promptImportWords, promptReview, quickReview } from "../ui/prompts";
@@ -219,7 +220,7 @@ export class DictionaryEditorView extends ItemView {
     const backCols = contentColumns(headers).filter((h) => h !== front);
 
     this.renderToolbar(root, file, doc);
-    this.renderStatsPanel(root, doc, front);
+    this.renderStatsPanel(root, doc, headers);
     this.renderTheory(root, doc, file);
     renderDictionaryMeta(
       root,
@@ -313,7 +314,18 @@ export class DictionaryEditorView extends ItemView {
       },
     );
     bar.createDiv({ cls: "obsictionary-view-toolbar-spacer" });
+    this.renderMuteControl(bar, file, doc);
     this.renderSortControl(bar);
+  }
+
+  /** Mute keeps this dictionary out of the due counter and the reminder notices. */
+  private renderMuteControl(bar: HTMLElement, file: TFile, doc: DictionaryDoc): void {
+    const muted = doc.frontmatter.config.mute;
+    const btn = this.toolButton(bar, muted ? "bell-off" : "bell", muted ? "Muted" : "Mute", () => {
+      void this.plugin.toggleMute(file);
+    });
+    btn.setAttribute("aria-label", muted ? "Unmute reminders" : "Mute reminders");
+    if (muted) btn.addClass("is-active");
   }
 
   private renderSortControl(bar: HTMLElement): void {
@@ -373,11 +385,13 @@ export class DictionaryEditorView extends ItemView {
     });
   }
 
-  private renderStatsPanel(root: HTMLElement, doc: DictionaryDoc, front: string): void {
+  /** Every tile starts the session it counts — the same ones the block renders. */
+  private renderStatsPanel(root: HTMLElement, doc: DictionaryDoc, headers: string[]): void {
     if (!doc.table) return;
+    const front = quickOptions(doc.frontmatter.config, headers).frontColumns;
     const stats = statsForRows(doc.table.rows, front, new Date());
     const panel = root.createDiv({ cls: "obsictionary-view-stats" });
-    renderStatsGrid(panel, stats);
+    renderStatsGrid(panel, stats, this.plugin.statActions([doc.file]));
   }
 
   private renderTheory(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {

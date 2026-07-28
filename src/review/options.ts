@@ -134,6 +134,33 @@ export function optionsToPreset(
   };
 }
 
+/** A slice of a dictionary's cards, as a stats tile asks for it. */
+export interface ReviewSlice {
+  pool: ReviewPool;
+  /** Absent means "whatever the dictionary's own layout says". */
+  record?: boolean;
+  states?: State[];
+}
+
+/**
+ * Narrow a dictionary's own layout to one slice of its cards. Only the pool and
+ * the filter are imposed: a tile says *which* cards to review, never how the
+ * card should be laid out — that stays the dictionary's business.
+ */
+export function applySlice(base: ReviewOptions, slice: ReviewSlice): ReviewOptions {
+  // Built field by field rather than spread over `base`, so that the slice's
+  // filter is the whole filter: a slice says which cards to review, and one
+  // left over from an earlier slice would silently narrow it further.
+  return {
+    frontColumns: base.frontColumns,
+    backColumns: base.backColumns,
+    order: base.order,
+    pool: slice.pool,
+    record: slice.record ?? base.record,
+    ...(slice.states ? { states: slice.states } : {}),
+  };
+}
+
 /**
  * Whether a card belongs in a session run with these options. An empty `states`
  * is read as "no filter" rather than "nothing matches": a producer that derives

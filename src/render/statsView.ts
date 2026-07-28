@@ -1,9 +1,9 @@
-import type { App, TFile } from "obsidian";
+import { Keymap, type App, type TFile } from "obsidian";
 import { State } from "ts-fsrs";
-import { SRS_COLUMN } from "../model/dictionary";
-import { cardFromCell, isDue } from "../model/srs";
+import { tableCards } from "../model/cards";
+import { isDue } from "../model/srs";
 import { readDictionary } from "../obsidian/dictionaryFile";
-import { frontColumnFor } from "../settings";
+import { quickOptions } from "../review/options";
 
 export interface Stats {
   total: number;
@@ -18,16 +18,18 @@ function emptyStats(): Stats {
   return { total: 0, fresh: 0, learning: 0, review: 0, relearning: 0, due: 0 };
 }
 
-/** Accumulate stats over table rows into `stats`. */
-export function accumulateStats(
-  stats: Stats,
+/**
+ * Stats for a single dictionary's rows. `front` is the columns the dictionary's
+ * cards ask with — the same list the session behind a tile uses, so the tile's
+ * number and the session it opens count the same rows.
+ */
+export function statsForRows(
   rows: Record<string, string>[],
-  front: string,
+  front: readonly string[],
   now: Date,
-): void {
-  for (const row of rows) {
-    if ((row[front] ?? "").trim() === "") continue;
-    const card = cardFromCell(row[SRS_COLUMN] ?? "", now);
+): Stats {
+  const stats = emptyStats();
+  for (const card of tableCards(rows, front, now)) {
     stats.total += 1;
     if (isDue(card, now)) stats.due += 1;
     switch (card.state) {
@@ -45,45 +47,94 @@ export function accumulateStats(
         break;
     }
   }
-}
-
-/** Stats for a single dictionary's rows. */
-export function statsForRows(rows: Record<string, string>[], front: string, now: Date): Stats {
-  const stats = emptyStats();
-  accumulateStats(stats, rows, front, now);
   return stats;
 }
 
-function statCell(container: HTMLElement, label: string, value: number, cls: string): void {
-  const cell = container.createDiv({ cls: `obsictionary-stat ${cls}` });
+/** Stats for one dictionary, or null when the note has no words table. */
+export async function statsForFile(app: App, file: TFile, now: Date): Promise<Stats | null> {
+  const doc = await readDictionary(app, file);
+  if (!doc?.table) return null;
+  const front = quickOptions(doc.frontmatter.config, doc.table.headers).frontColumns;
+  return statsForRows(doc.table.rows, front, now);
+}
+
+/** Sum of several dictionaries' stats. */
+export async function statsForFiles(app: App, files: TFile[], now: Date): Promise<Stats> {
+  const total = emptyStats();
+  for (const file of files) {
+    const stats = await statsForFile(app, file, now);
+    if (!stats) continue;
+    for (const key of Object.keys(total) as (keyof Stats)[]) total[key] += stats[key];
+  }
+  return total;
+}
+
+/** What a tile does when clicked, keyed by the tile it belongs to. */
+export type StatKind = "total" | "due" | "new" | "learning" | "review";
+export type StatActions = Partial<Record<StatKind, () => void>>;
+
+function statCell(
+  container: HTMLElement,
+  label: string,
+  value: number,
+  kind: StatKind,
+  onClick?: () => void,
+): void {
+  const cls = `obsictionary-stat is-${kind}`;
+  // A plain div until it does something: a button that only looks clickable is
+  // worse than a number. The label spells out both halves of the tile, since a
+  // screen reader would otherwise read the value and the word as one run-on.
+  const cell = onClick
+    ? container.createEl("button", {
+        cls: `${cls} is-clickable`,
+        attr: { "aria-label": `Review ${label.toLowerCase()} cards (${value})` },
+      })
+    : container.createDiv({ cls });
   cell.createDiv({ cls: "obsictionary-stat-value", text: value.toString() });
   cell.createDiv({ cls: "obsictionary-stat-label", text: label });
+  if (onClick) cell.addEventListener("click", onClick);
 }
 
 /** Render a stats grid into `el` (does not clear `el`). */
-export function renderStatsGrid(el: HTMLElement, stats: Stats): void {
+export function renderStatsGrid(el: HTMLElement, stats: Stats, actions: StatActions = {}): void {
   const grid = el.createDiv({ cls: "obsictionary-stats" });
-  statCell(grid, "Total", stats.total, "is-total");
-  statCell(grid, "Due", stats.due, "is-due");
-  statCell(grid, "New", stats.fresh, "is-new");
-  statCell(grid, "Learning", stats.learning + stats.relearning, "is-learning");
-  statCell(grid, "Review", stats.review, "is-review");
+  statCell(grid, "Total", stats.total, "total", actions.total);
+  statCell(grid, "Due", stats.due, "due", actions.due);
+  statCell(grid, "New", stats.fresh, "new", actions.new);
+  statCell(grid, "Learning", stats.learning + stats.relearning, "learning", actions.learning);
+  statCell(grid, "Review", stats.review, "review", actions.review);
 }
 
 /** Render an `obsictionary-stats` code block (aggregates the given files). */
-export async function renderStats(app: App, files: TFile[], el: HTMLElement): Promise<void> {
+export async function renderStats(
+  app: App,
+  files: TFile[],
+  el: HTMLElement,
+  actions: StatActions = {},
+): Promise<void> {
   el.empty();
   if (files.length === 0) {
     el.createDiv({ cls: "obsictionary-stats-empty", text: "No dictionary found for stats." });
     return;
   }
-  const now = new Date();
-  const stats = emptyStats();
+  if (files.length > 1) renderDictionaryLinks(app, el, files);
+  renderStatsGrid(el, await statsForFiles(app, files, new Date()), actions);
+}
+
+/** Links to each dictionary a multi-dictionary block covers. */
+function renderDictionaryLinks(app: App, el: HTMLElement, files: TFile[]): void {
+  const row = el.createDiv({ cls: "obsictionary-stats-links" });
   for (const file of files) {
-    const doc = await readDictionary(app, file);
-    if (!doc?.table) continue;
-    const front = frontColumnFor(doc.table.headers);
-    accumulateStats(stats, doc.table.rows, front, now);
+    // An href makes the link keyboard-reachable; navigation is ours, so the
+    // default is always prevented.
+    const link = row.createEl("a", {
+      cls: "obsictionary-stats-link",
+      text: file.basename,
+      href: "#",
+    });
+    link.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      void app.workspace.getLeaf(Keymap.isModEvent(evt)).openFile(file);
+    });
   }
-  renderStatsGrid(el, stats);
 }
