@@ -230,7 +230,11 @@
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
-  /* The clickable tile is a <button>, which inherits neither of these. */
+  /* The clickable tile is a <button>, which inherits none of these. Obsidian sizes
+     every button to `--input-height` (30px), which is shorter than the value and its
+     label stacked — with `overflow: hidden` above, the label was squeezed to nothing
+     and a clickable tile showed a bare number. */
+  height: auto;
   font-family: inherit;
   text-align: center;
   line-height: var(--line-height-tight);
