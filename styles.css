@@ -716,7 +716,10 @@ body.obsictionary-hide-status .status-bar {
 
 .obsictionary-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 100%), 1fr));
+  /* `auto-fit`, not `auto-fill`: empty tracks collapse, so the tiles on the last row
+     grow into the space instead of leaving a column-wide gap beside them. A stats
+     block covering one iconed dictionary was mostly gap. */
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: var(--size-4-3);
   margin-bottom: var(--size-4-4);
 }
