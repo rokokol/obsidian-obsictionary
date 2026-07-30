@@ -12,10 +12,11 @@
 import type { Card } from "ts-fsrs";
 import { SRS_COLUMN } from "./dictionary";
 import { cardFromCell } from "./srs";
+import { isBlankCell } from "./word";
 
 /** Whether a row is a card at all, given the columns its front is made of. */
 export function isCardRow(row: Record<string, string>, front: readonly string[]): boolean {
-  return front.some((column) => (row[column] ?? "").trim() !== "");
+  return front.some((column) => !isBlankCell(row[column] ?? ""));
 }
 
 /** Every card in `rows`, in file order. */

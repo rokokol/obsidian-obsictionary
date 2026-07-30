@@ -37,7 +37,7 @@ describe("defaultOptions", () => {
       frontColumns: ["word"],
       backColumns: ["transcription", "translation"],
       pool: "due",
-      order: "file",
+      order: "shuffled",
       record: true,
     });
   });
@@ -51,9 +51,13 @@ describe("defaultOptions", () => {
       frontColumns: [],
       backColumns: [],
       pool: "due",
-      order: "file",
+      order: "shuffled",
       record: true,
     });
+  });
+
+  it("shuffles, so a dictionary without presets does not drill in file order", () => {
+    expect(defaultOptions(HEADERS).order).toBe("shuffled");
   });
 });
 

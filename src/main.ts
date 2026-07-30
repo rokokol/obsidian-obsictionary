@@ -5,11 +5,17 @@ import {
   setIcon,
   TFile,
   TFolder,
-  type WorkspaceLeaf,
+  type ViewState,
+  WorkspaceLeaf,
 } from "obsidian";
 import { State } from "ts-fsrs";
-import { createDictionaryNote } from "./commands/dictionaryCommands";
-import type { DictionaryConfig } from "./model/dictionaryConfig";
+import {
+  createDictionaryNote,
+  migrateTaggedDictionaries,
+  taggedWithoutProperty,
+  type MigrationResult,
+} from "./commands/dictionaryCommands";
+import { countedDictionaries, type DictionaryConfig } from "./model/dictionaryConfig";
 import { DictionaryCache } from "./obsidian/cache";
 import {
   dictionaryConfig,
@@ -17,29 +23,34 @@ import {
   readDictionary,
   updateDictionaryConfig,
 } from "./obsidian/dictionaryFile";
-import { parseWikilink } from "./render/blocks";
+import { forgetIconicIcons } from "./obsidian/iconic";
+import { parseStatsBlock, parseWikilink } from "./render/blocks";
 import { renderDictionary, type ReviewMode } from "./render/dictionaryView";
 import { renderStats, type StatActions } from "./render/statsView";
 import { DueTracker } from "./review/dueTracker";
 import type { ReviewSlice } from "./review/options";
-import { DEFAULT_SETTINGS, type ObsictionarySettings } from "./settings";
+import { DEFAULT_SETTINGS, migrateSettings, type ObsictionarySettings } from "./settings";
 import {
   promptAddWord,
   promptImportWords,
   promptReview,
   quickReview,
   reviewSlice,
+  type ReviewPrefs,
 } from "./ui/prompts";
 import { ObsictionarySettingTab } from "./ui/settingsTab";
-import { errorMessage } from "./util";
+import { errorMessage, plural } from "./util";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./view/dashboardView";
 import { DICTIONARY_VIEW_TYPE, DictionaryEditorView } from "./view/dictionaryEditorView";
+import { DictionaryTilesView, TILES_VIEW_TYPE } from "./view/tilesView";
 
 export default class ObsictionaryPlugin extends Plugin {
   override settings: ObsictionarySettings = DEFAULT_SETTINGS;
   readonly cache = new DictionaryCache(this.app);
   /** Paths the user explicitly asked to keep open as markdown (skip auto-swap). */
   private readonly forceMarkdown = new Set<string>();
+  /** Set while our `setViewState` wrapper is installed; see `interceptOpens`. */
+  private intercepting = false;
   /** Watches the status bar so we can hide it only while it's empty. */
   private statusBarObserver: MutationObserver | null = null;
   private readonly dueTracker = new DueTracker(
@@ -65,6 +76,7 @@ export default class ObsictionaryPlugin extends Plugin {
 
     this.registerView(DICTIONARY_VIEW_TYPE, (leaf) => new DictionaryEditorView(leaf, this));
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
+    this.registerView(TILES_VIEW_TYPE, (leaf) => new DictionaryTilesView(leaf, this));
 
     this.applyStatusBar();
     this.applyReminderTimer();
@@ -81,6 +93,8 @@ export default class ObsictionaryPlugin extends Plugin {
       ),
     );
 
+    this.interceptOpens();
+
     this.app.workspace.onLayoutReady(() => {
       this.cache.rebuild();
       this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
@@ -89,18 +103,13 @@ export default class ObsictionaryPlugin extends Plugin {
       this.updateChrome();
       this.startupReminderPending = this.settings.remindersEnabled && this.settings.remindOnStartup;
       this.applyTracking();
+      this.offerMigration();
     });
 
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         this.maybeSwap(leaf);
         this.updateChrome();
-      }),
-    );
-    this.registerEvent(
-      this.app.workspace.on("file-open", () => {
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (view) this.maybeSwap(view.leaf);
       }),
     );
 
@@ -154,10 +163,26 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "migrate-tagged-dictionaries",
+      name: "Convert tagged notes into dictionaries",
+      callback: () => {
+        void this.migrateTagged();
+      },
+    });
+
+    this.addCommand({
       id: "open-dashboard",
       name: "Open dictionary dashboard",
       callback: () => {
         void this.openDashboard();
+      },
+    });
+
+    this.addCommand({
+      id: "open-tiles",
+      name: "Open dictionary tiles",
+      callback: () => {
+        void this.openTiles();
       },
     });
 
@@ -290,6 +315,61 @@ export default class ObsictionaryPlugin extends Plugin {
     else this.dueTracker.forget(file.path);
   }
 
+  /**
+   * Dictionaries used to be marked with the `#obsictionary` tag. Detection moved
+   * to the property, so a vault written under the old rule would come up empty —
+   * say so, with the command that fixes it, rather than silently losing every
+   * dictionary the user has.
+   *
+   * Offered once per vault. Plenty of notes carry the tag on purpose without
+   * wanting to be dictionaries (a note *about* the plugin, for one), and a notice
+   * on every launch that the user cannot answer is nagging. The command stays.
+   */
+  private offerMigration(): void {
+    if (this.settings.migrationOffered) return;
+    const stale = taggedWithoutProperty(this.app).length;
+    if (stale === 0) return;
+    this.settings.migrationOffered = true;
+    void this.saveSettings();
+    const notice = new Notice("", 15000);
+    notice.messageEl.setText(
+      `${stale.toString()} tagged ${stale === 1 ? "note is" : "notes are"} missing the ` +
+        "obsictionary property and no longer count as dictionaries. ",
+    );
+    const link = notice.messageEl.createEl("a", { text: "Convert them", href: "#" });
+    link.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      notice.hide();
+      void this.migrateTagged();
+    });
+  }
+
+  private async migrateTagged(): Promise<void> {
+    let result: MigrationResult;
+    try {
+      result = await migrateTaggedDictionaries(this.app);
+    } catch (err) {
+      new Notice(`Could not convert the tagged notes: ${errorMessage(err)}`);
+      return;
+    }
+    // Rebuilt whatever happened: the notes that did convert are dictionaries now,
+    // and leaving them out of the cache would hide them until the next restart.
+    this.cache.rebuild();
+    this.refreshRendered();
+    const parts: string[] = [];
+    if (result.converted > 0) {
+      parts.push(`Converted ${result.converted.toString()} note${plural(result.converted)}.`);
+    }
+    if (result.failed.length > 0) {
+      // Named rather than counted, because knowing *which* note to look at is the
+      // whole value — but a notice is not a place for forty of them.
+      const shown = result.failed.slice(0, 3).join(", ");
+      const rest = result.failed.length - 3;
+      parts.push(`Could not write ${shown}${rest > 0 ? ` and ${rest.toString()} more` : ""}.`);
+    }
+    new Notice(parts.length > 0 ? parts.join(" ") : "No tagged notes left to convert.");
+  }
+
   private async promptAddWord(file: TFile): Promise<void> {
     const doc = await readDictionary(this.app, file);
     if (doc) promptAddWord(this.app, file, doc, this.settings.newDictionaryColumns);
@@ -306,19 +386,33 @@ export default class ObsictionaryPlugin extends Plugin {
    * it, losing the scroll position.
    */
   private async openDashboard(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)[0];
+    await this.openSingleton(DASHBOARD_VIEW_TYPE);
+  }
+
+  private async openTiles(): Promise<void> {
+    await this.openSingleton(TILES_VIEW_TYPE);
+  }
+
+  /** Reveal the one open view of this type, or make one. */
+  private async openSingleton(type: string): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(type)[0];
     if (existing) {
       await this.app.workspace.revealLeaf(existing);
       return;
     }
     const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
+    await leaf.setViewState({ type, active: true });
     await this.app.workspace.revealLeaf(leaf);
   }
 
   private async createDictionary(parent?: TFolder): Promise<void> {
     const file = await createDictionaryNote(this.app, this.settings.newDictionaryColumns, parent);
-    await this.app.workspace.getLeaf(true).openFile(file);
+    const leaf = this.app.workspace.getLeaf(true);
+    // Opened as a dictionary outright rather than left to `interceptOpens`, which
+    // asks the metadata cache — and the cache has not parsed a file this new. We
+    // wrote it a moment ago, so there is nothing to detect.
+    if (this.settings.defaultView === "dictionary") await this.openAsDictionary(file, leaf);
+    else await leaf.openFile(file);
   }
 
   private async startReview(mode: ReviewMode): Promise<void> {
@@ -330,7 +424,7 @@ export default class ObsictionaryPlugin extends Plugin {
       }
       await this.reviewFiles([active], mode);
     } else {
-      await this.reviewFiles(this.cache.files(), mode);
+      await this.reviewFiles(this.countedFiles(this.cache.files()), mode);
     }
   }
 
@@ -420,13 +514,21 @@ export default class ObsictionaryPlugin extends Plugin {
     return this.settings.remindersEnabled && this.settings.statusBarCounter;
   }
 
-  /** (Re)arm the repeating reminder; zero hours means start-up only. */
+  /**
+   * (Re)arm the repeating reminder; zero minutes means start-up only.
+   *
+   * No clamping here: `remindEveryMinutes` is a finite integer in range by the
+   * time it lands in the settings — `migrateSettings` clamps whatever was stored
+   * and `parseRemindMinutes` clamps whatever was typed. Keep it that way; a
+   * negative period would be clamped to no delay at all by the browser and fire a
+   * notice on every tick.
+   */
   private applyReminderTimer(): void {
-    const hours = this.settings.remindersEnabled ? this.settings.remindEveryHours : 0;
-    const period = hours * 60 * 60 * 1000;
+    const minutes = this.settings.remindersEnabled ? this.settings.remindEveryMinutes : 0;
+    const period = minutes * 60 * 1000;
     // Re-arming restarts the clock, so leave a timer that already runs at the
-    // asked-for period alone — dragging the slider or flipping an unrelated
-    // reminder switch should not keep pushing the next reminder away.
+    // asked-for period alone — retyping the same interval or flipping an
+    // unrelated reminder switch should not keep pushing the next reminder away.
     if (period === this.reminderPeriod) return;
     this.reminderPeriod = period;
     if (this.reminderTimer !== null) {
@@ -498,8 +600,17 @@ export default class ObsictionaryPlugin extends Plugin {
    * saying "3 cards due" could open a hundred-card session.
    */
   private async reviewDue(): Promise<void> {
-    const files = this.cache.files().filter((file) => !dictionaryConfig(this.app, file).mute);
-    await reviewSlice(this.app, files, this.settings.fsrsRetention, { pool: "due" });
+    await reviewSlice(this.app, this.countedFiles(this.cache.files()), this.reviewPrefs(), {
+      pool: "due",
+    });
+  }
+
+  /** How review sessions started from here should behave. */
+  reviewPrefs(): ReviewPrefs {
+    return {
+      retention: this.settings.fsrsRetention,
+      keepQuestion: this.settings.keepQuestionOnReveal,
+    };
   }
 
   /** Flip a dictionary's mute flag; muted dictionaries stay out of reminders. */
@@ -517,7 +628,7 @@ export default class ObsictionaryPlugin extends Plugin {
       return;
     }
     if (!written) {
-      new Notice("Could not update this note: its `obsictionary` property is not a mapping.");
+      new Notice("Could not update this note: its obsictionary property is not a mapping.");
       return;
     }
     new Notice(written.mute ? `Muted ${file.basename}.` : `Unmuted ${file.basename}.`);
@@ -528,6 +639,70 @@ export default class ObsictionaryPlugin extends Plugin {
     // subscriptions fire once the write lands, which is the right moment.
   }
 
+  /**
+   * Open dictionaries in the dictionary view by rewriting the request, not by
+   * correcting it afterwards.
+   *
+   * Swapping after the fact — the obvious approach, and the one this used to
+   * take — puts a markdown view on the leaf first. Obsidian records that view in
+   * the leaf's navigation history, so Back returned to the raw note of the file
+   * you were already looking at, whereupon the swap ran again and recorded it
+   * again: Back never got out of the file, and every bounce re-rendered the whole
+   * note. Rewriting the state before the leaf acts on it means the markdown view
+   * is never built, so there is nothing to flash and nothing to record.
+   *
+   * The patch is on the prototype, so it is global; it is removed on unload, and
+   * left alone if someone patched on top of it (theirs would be lost otherwise).
+   * `intercepting` makes the wrapper inert in the meantime.
+   */
+  private interceptOpens(): void {
+    const proto = WorkspaceLeaf.prototype;
+    // Held unbound on purpose: it is called back with the leaf as `this`, and
+    // put back on the prototype on unload.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const original = proto.setViewState;
+    const rewrite = (viewState: ViewState): ViewState =>
+      this.dictionaryViewState(viewState) ?? viewState;
+    const patched = function (
+      this: WorkspaceLeaf,
+      viewState: ViewState,
+      eState?: unknown,
+    ): Promise<void> {
+      return original.call(this, rewrite(viewState), eState);
+    };
+    proto.setViewState = patched;
+    this.intercepting = true;
+    this.register(() => {
+      this.intercepting = false;
+      if (proto.setViewState === patched) proto.setViewState = original;
+    });
+  }
+
+  /** The dictionary-view state a markdown request should become, if any. */
+  private dictionaryViewState(viewState: ViewState): ViewState | null {
+    if (!this.intercepting || this.settings.defaultView !== "dictionary") return null;
+    if (viewState.type !== "markdown") return null;
+    const path: unknown = viewState.state?.["file"];
+    if (typeof path !== "string" || this.forceMarkdown.has(path)) return null;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || !isDictionaryFile(this.app, file)) return null;
+    // Only the file survives: `mode`, `source` and the rest describe the markdown
+    // editor, and the dictionary view would store them straight back into its own
+    // state, where the next markdown open would read them as stale.
+    return { ...viewState, type: DICTIONARY_VIEW_TYPE, state: { file: path } };
+  }
+
+  /**
+   * Swap a leaf that is *already* showing a dictionary as markdown — a restored
+   * workspace at load, or a note the user has just given the `obsictionary`
+   * property to. Ordinary opens never reach this: `interceptOpens` catches them
+   * before a markdown view is ever built.
+   *
+   * Deliberately tied to focus changing rather than to the note changing: a note
+   * becomes a dictionary the moment the property is typed, and swapping then would
+   * pull the editor out from under a cursor still inside the frontmatter block.
+   * Leaving on the leaf and coming back is a clear enough signal.
+   */
   private maybeSwap(leaf: WorkspaceLeaf | null): void {
     if (this.settings.defaultView !== "dictionary") return;
     if (!leaf) return;
@@ -570,21 +745,42 @@ export default class ObsictionaryPlugin extends Plugin {
    * Files for an `obsictionary-stats` block: empty body → the current note;
    * `vault`/`all` → every dictionary; otherwise a dictionary referenced by name,
    * path or `[[wiki-link]]`.
+   *
+   * Muted dictionaries drop out of the vault scope — a muted dictionary is one
+   * the user stepped away from, and counting it makes the vault total disagree
+   * with the reminder that opens the session. A block naming one dictionary
+   * always shows it: pointing at a dictionary is asking for its numbers, muted
+   * or not.
    */
   private statsFiles(source: string, sourcePath: string): TFile[] {
-    const arg = source.trim();
+    const query = parseStatsBlock(source);
+    const arg = query.scope;
     if (arg === "") return this.filesFromPath(sourcePath);
     const scope = arg.toLowerCase();
-    if (scope === "vault" || scope === "all") return this.cache.files();
+    if (scope === "vault" || scope === "all") {
+      return this.countedFiles(this.cache.files(), query.includeMuted);
+    }
     const linkpath = parseWikilink(arg.replace(/^!/, ""))?.target ?? arg;
     const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
     return file && isDictionaryFile(this.app, file) ? [file] : [];
   }
 
+  /**
+   * Narrow a vault-wide list to what counts. `includeMuted` overrides the
+   * setting; null means the setting decides.
+   */
+  countedFiles(files: TFile[], includeMuted: boolean | null = null): TFile[] {
+    return countedDictionaries(
+      files,
+      (file) => dictionaryConfig(this.app, file).mute,
+      includeMuted ?? this.settings.statsIncludeMuted,
+    );
+  }
+
   /** Tile actions shared by the stats block and the dashboard. */
   statActions(files: TFile[]): StatActions {
     const slice = (slice: ReviewSlice) => () => {
-      void reviewSlice(this.app, files, this.settings.fsrsRetention, slice);
+      void reviewSlice(this.app, files, this.reviewPrefs(), slice);
     };
     return {
       total: slice({ pool: "all", record: false }),
@@ -602,7 +798,7 @@ export default class ObsictionaryPlugin extends Plugin {
 
   private async reviewFiles(files: TFile[], mode: ReviewMode): Promise<void> {
     const start = mode === "options" ? promptReview : quickReview;
-    await start(this.app, files, this.settings.fsrsRetention);
+    await start(this.app, files, this.reviewPrefs());
   }
 
   /** Re-render every open dictionary view (after a settings change). */
@@ -612,8 +808,48 @@ export default class ObsictionaryPlugin extends Plugin {
     });
   }
 
+  /**
+   * Repaint everything that renders dictionary content. Some settings — which
+   * properties to show, whether muted dictionaries count — change what the
+   * dashboard totals and every `obsictionary-stats` block mean, and neither
+   * redraws on its own: the dashboard waits for a dictionary edit, and a block's
+   * processor only runs again on a re-render.
+   *
+   * The re-render is blunt: it hits every note being read, not just the ones with
+   * a dictionary in them, and so re-runs other plugins' post-processors too. There
+   * is no cheap way to ask which notes contain a stats block, and this runs only
+   * when a setting is toggled by hand. Leaves not being read are skipped, which is
+   * most of them.
+   */
+  refreshRendered(): void {
+    // Not the tiles view: it reads no setting these controls change, and its own
+    // header action covers the one thing it can go stale on.
+    this.refreshDictionaryViews();
+    this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof DashboardView) leaf.view.redraw();
+    });
+    this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.getMode() === "preview") {
+        view.previewMode.rerender(true);
+      }
+    });
+  }
+
+  /**
+   * Repaint the tiles view. Separate from `refreshRendered` because only the
+   * Iconic switch changes what it draws, and nothing else on screen cares about
+   * that one.
+   */
+  refreshTiles(): void {
+    this.app.workspace.getLeavesOfType(TILES_VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof DictionaryTilesView) leaf.view.redraw();
+    });
+  }
+
   override onunload(): void {
     this.dueTracker.dispose();
+    forgetIconicIcons();
     this.statusBarObserver?.disconnect();
     this.statusBarObserver = null;
     // Obsidian removes the item itself; dropping the handle keeps a late
@@ -624,7 +860,7 @@ export default class ObsictionaryPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const stored = (await this.loadData()) as Partial<ObsictionarySettings> | null;
-    this.settings = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+    this.settings = { ...DEFAULT_SETTINGS, ...migrateSettings(stored ?? {}) };
   }
 
   async saveSettings(): Promise<void> {

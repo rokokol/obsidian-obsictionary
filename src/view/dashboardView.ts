@@ -1,26 +1,13 @@
-import {
-  ItemView,
-  Keymap,
-  setIcon,
-  type TAbstractFile,
-  type TFile,
-  type WorkspaceLeaf,
-} from "obsidian";
+import { ItemView, Keymap, setIcon, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import type ObsictionaryPlugin from "../main";
-import { dictionaryConfig } from "../obsidian/dictionaryFile";
-import { renderStatsGrid, statsForFile, type Stats } from "../render/statsView";
+import { countedDictionaries } from "../model/dictionaryConfig";
+import { renderStatsGrid, type Stats } from "../render/statsView";
 import { quickReview, reviewSlice } from "../ui/prompts";
+import { collectRows, NO_DICTIONARIES, REDRAW_DELAY, type DictionaryRow } from "./dictionaryList";
 
 export const DASHBOARD_VIEW_TYPE = "obsictionary-dashboard";
 
-/** One dictionary's row in the table. */
-interface Row {
-  file: TFile;
-  stats: Stats;
-  muted: boolean;
-}
-
-function sumStats(rows: Row[]): Stats {
+function sumStats(rows: DictionaryRow[]): Stats {
   const total: Stats = { total: 0, fresh: 0, learning: 0, review: 0, relearning: 0, due: 0 };
   for (const row of rows) {
     for (const key of Object.keys(total) as (keyof Stats)[]) total[key] += row.stats[key];
@@ -94,12 +81,17 @@ export class DashboardView extends ItemView {
     return Promise.resolve();
   }
 
+  /** Repaint on demand — a settings change, not a vault event. */
+  redraw(): void {
+    this.queueRedraw();
+  }
+
   private queueRedraw(): void {
     if (this.redrawTimer !== null) return;
     this.redrawTimer = window.setTimeout(() => {
       this.redrawTimer = null;
       void this.render();
-    }, 400);
+    }, REDRAW_DELAY);
   }
 
   private async render(): Promise<void> {
@@ -114,38 +106,37 @@ export class DashboardView extends ItemView {
     const files = this.plugin.cache.files();
     if (files.length === 0) {
       this.shown.clear();
-      root.createDiv({
-        cls: "obsictionary-view-empty",
-        text: "No dictionaries yet. Tag a note with #obsictionary to start one.",
-      });
+      root.createDiv({ cls: "obsictionary-view-empty", text: NO_DICTIONARIES });
       return;
     }
 
-    const now = new Date();
-    const rows: Row[] = [];
-    for (const file of files) {
-      const stats = await statsForFile(this.app, file, now);
-      if (!stats) continue;
-      rows.push({ file, stats, muted: dictionaryConfig(this.app, file).mute });
-    }
+    const rows = await collectRows(this.app, files, new Date());
     if (!current()) return;
     this.shown = new Set(rows.map((row) => row.file.path));
 
     root.createEl("h2", { text: "Dictionaries" });
+    // The totals count what the reminders count, so the two never disagree; the
+    // table below still lists every dictionary, muted ones marked.
+    const counted = countedDictionaries(
+      rows,
+      (row) => row.muted,
+      this.plugin.settings.statsIncludeMuted,
+    );
+    const countedFiles = counted.map((row) => row.file);
     // Summed from the rows rather than read again: `statsForFiles` would parse
     // every dictionary a second time, with the pane blank meanwhile.
-    renderStatsGrid(root, sumStats(rows), this.plugin.statActions(files));
+    renderStatsGrid(root, sumStats(counted), this.plugin.statActions(countedFiles));
 
     const bar = root.createDiv({ cls: "obsictionary-dashboard-bar" });
     const reviewAll = bar.createEl("button", { cls: "mod-cta", text: "Review everything due" });
     reviewAll.addEventListener("click", () => {
-      void reviewSlice(this.app, files, this.plugin.settings.fsrsRetention, { pool: "due" });
+      void reviewSlice(this.app, countedFiles, this.plugin.reviewPrefs(), { pool: "due" });
     });
 
     this.renderTable(root, rows);
   }
 
-  private renderTable(root: HTMLElement, rows: Row[]): void {
+  private renderTable(root: HTMLElement, rows: DictionaryRow[]): void {
     const table = root.createEl("table", { cls: "obsictionary-dashboard-table" });
     const head = table.createEl("thead").createEl("tr");
     for (const label of ["Dictionary", "Total", "Due", "New", "Learning", "Review", ""]) {
@@ -194,7 +185,7 @@ export class DashboardView extends ItemView {
       });
       setIcon(review, "play");
       review.addEventListener("click", () => {
-        void quickReview(this.app, [row.file], this.plugin.settings.fsrsRetention);
+        void quickReview(this.app, [row.file], this.plugin.reviewPrefs());
       });
 
       const mute = actions.createEl("button", {
@@ -215,7 +206,7 @@ export class DashboardView extends ItemView {
    * lags the write by a beat, so redrawing now would repaint the old state. The
    * `changed` event this write raises brings the table up to date.
    */
-  private async toggleMute(row: Row): Promise<void> {
+  private async toggleMute(row: DictionaryRow): Promise<void> {
     await this.plugin.toggleMute(row.file);
   }
 }

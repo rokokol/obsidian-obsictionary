@@ -60,14 +60,61 @@ export interface ObsictionarySettings {
    * Empty = show every non-system property (the original behavior).
    */
   properties: string[];
+  /**
+   * Whether the answer joins the question on screen instead of replacing it.
+   * On by default: a card usually reads better whole.
+   */
+  keepQuestionOnReveal: boolean;
+  /** Whether muted dictionaries count toward stats blocks and vault sessions. */
+  statsIncludeMuted: boolean;
+  /**
+   * Whether the tiles view reads icons from the Iconic plugin. Off until asked
+   * for: it reads another plugin's private data file, which is not something to
+   * start doing on the user's behalf. The setting is only shown when Iconic is
+   * installed — with it absent there is nothing to read and the switch would mean
+   * nothing.
+   */
+  iconicIntegration: boolean;
+  /** Whether the one-time offer to convert tag-marked dictionaries was made. */
+  migrationOffered: boolean;
   /** Master switch for every reminder below. */
   remindersEnabled: boolean;
   /** Notice on start-up when cards are waiting. */
   remindOnStartup: boolean;
-  /** Repeat the notice every N hours; 0 = only on start-up. */
-  remindEveryHours: number;
+  /** Repeat the notice every N minutes; 0 = only on start-up. */
+  remindEveryMinutes: number;
   /** Keep a due counter in the status bar. */
   statusBarCounter: boolean;
+}
+
+/** Longest repeat interval the settings field accepts — a week, in minutes. */
+export const MAX_REMIND_MINUTES = 7 * 24 * 60;
+
+/**
+ * A reminder interval that is safe to hand to `setInterval`. Nonsense — a
+ * negative, a `NaN`, a value out of a hand-edited settings file — becomes zero,
+ * which means "start-up only". A negative would otherwise be clamped to no delay
+ * by the browser and fire a notice on every tick, forever.
+ */
+export function clampRemindMinutes(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+  return Math.min(Math.round(value), MAX_REMIND_MINUTES);
+}
+
+/**
+ * Read a user-typed reminder interval. A cleared field is a deliberate zero, but
+ * text that is not a number at all keeps the current value: retyping an interval
+ * and fumbling it should not silently switch the reminder off. The input must be
+ * a plain text field for this to be reachable — `type="number"` reports
+ * unparseable content as the empty string, which is indistinguishable from
+ * clearing it on purpose.
+ */
+export function parseRemindMinutes(input: string, current: number): number {
+  const text = input.trim();
+  if (text === "") return 0;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) return current;
+  return clampRemindMinutes(value);
 }
 
 export const DEFAULT_SETTINGS: ObsictionarySettings = {
@@ -77,11 +124,40 @@ export const DEFAULT_SETTINGS: ObsictionarySettings = {
   defaultView: "dictionary",
   defaultSort: "manual",
   properties: [], // empty = render every property
+  keepQuestionOnReveal: true,
+  statsIncludeMuted: false,
+  iconicIntegration: false,
+  migrationOffered: false,
   remindersEnabled: true,
   remindOnStartup: true,
-  remindEveryHours: 0,
+  remindEveryMinutes: 0,
   statusBarCounter: true,
 };
+
+/** Setting names this version no longer writes, kept only to be read once. */
+interface LegacySettings {
+  /** Became `remindEveryMinutes`; hours were too coarse to be useful. */
+  remindEveryHours?: number;
+}
+
+/**
+ * Bring a stored settings object up to the current shape. Without this a vault
+ * that still holds `remindEveryHours` would fall back to the default of zero and
+ * quietly stop repeating its reminders.
+ *
+ * The interval is clamped whichever key it arrived under: `data.json` is a plain
+ * file a user may well have edited, and it feeds a timer.
+ */
+export function migrateSettings(
+  stored: Partial<ObsictionarySettings> & LegacySettings,
+): Partial<ObsictionarySettings> {
+  const { remindEveryHours, ...rest } = stored;
+  if (rest.remindEveryMinutes !== undefined) {
+    return { ...rest, remindEveryMinutes: clampRemindMinutes(rest.remindEveryMinutes) };
+  }
+  if (remindEveryHours === undefined) return rest;
+  return { ...rest, remindEveryMinutes: clampRemindMinutes(remindEveryHours * 60) };
+}
 
 /** Parse a user-typed list (commas/newlines) into a clean, deduped key list. */
 export function sanitizePropertyKeys(input: string): string[] {

@@ -1,4 +1,5 @@
 import {
+  Component,
   ItemView,
   Keymap,
   MarkdownRenderer,
@@ -15,10 +16,12 @@ import {
   DUE_COLUMN,
   needsNormalize,
   normalizeWords,
+  SRS_COLUMN,
   summaryChanged,
   type NormalizeSummary,
 } from "../model/dictionary";
-import { sanitizeCell } from "../model/word";
+import { toFrontmatterValue } from "../model/dictionaryConfig";
+import { isBlankCell, sanitizeCell } from "../model/word";
 import {
   readDictionary,
   updateTheory,
@@ -34,8 +37,50 @@ import { frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
 import { ConfirmModal } from "../ui/confirmModal";
 import { promptAddWord, promptImportWords, promptReview, quickReview } from "../ui/prompts";
 import { errorMessage } from "../util";
+import {
+  cardSnapshots,
+  planIsEmpty,
+  planRender,
+  scheduleSnapshot,
+  type ViewSnapshot,
+} from "./renderPlan";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
+
+/**
+ * How long to wait before repainting after a vault event. One edit produces two
+ * events — a vault `modify` and a metadata `changed` — a few milliseconds apart,
+ * and a review session writes one per graded card; this collapses each burst into
+ * a single read of the file.
+ */
+const REPAINT_DELAY = 150;
+
+/**
+ * Built once instead of per comparison. `String.localeCompare` constructs a
+ * collator on every call, which is the expensive half of sorting a long word list.
+ */
+const COLLATOR = new Intl.Collator(undefined, { usage: "sort" });
+
+/** One rendered card, with the component owning whatever markdown it rendered. */
+interface CardEntry {
+  el: HTMLElement;
+  component: Component;
+}
+
+/** The view's fixed sections, created once so a repaint can target just one. */
+interface Shell {
+  toolbar: HTMLElement;
+  stats: HTMLElement;
+  theory: HTMLElement;
+  meta: HTMLElement;
+  cards: HTMLElement;
+}
+
+/** A row paired with its index in the file's table. */
+interface RowEntry {
+  row: Record<string, string>;
+  index: number;
+}
 
 /** Human-readable summary of an auto-cleanup pass, for a Notice. */
 function describeNormalize(summary: NormalizeSummary): string {
@@ -88,6 +133,19 @@ export class DictionaryEditorView extends ItemView {
   private file: TFile | null = null;
   private dragIndex: number | null = null;
   private sortMode: SortMode;
+  /** The fixed sections, or null when nothing is built yet. */
+  private shell: Shell | null = null;
+  /** What is on screen. Null forces the next repaint to rebuild everything. */
+  private snapshot: ViewSnapshot | null = null;
+  private cardEntries: CardEntry[] = [];
+  /** Owns the theory's rendered markdown, so re-rendering it releases the old. */
+  private theoryComponent: Component | null = null;
+  private repaintTimer: number | null = null;
+  /**
+   * Bumped by every render pass. A pass reads the file across an await, so a newer
+   * pass can overtake it; the older one checks this before touching the DOM.
+   */
+  private generation = 0;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsictionaryPlugin) {
     super(leaf);
@@ -112,8 +170,13 @@ export class DictionaryEditorView extends ItemView {
     return this.file;
   }
 
-  /** Re-render, e.g. after settings change. */
+  /**
+   * Rebuild from scratch — for a settings change, which can alter anything from
+   * which properties show to what the stat tiles do, none of it visible in the
+   * file the snapshot was taken from.
+   */
   refresh(): void {
+    this.snapshot = null;
     void this.renderView();
   }
 
@@ -128,7 +191,10 @@ export class DictionaryEditorView extends ItemView {
       const path: unknown = state.file;
       if (typeof path === "string") {
         const found = this.app.vault.getAbstractFileByPath(path);
-        this.file = found instanceof TFile ? found : null;
+        const next = found instanceof TFile ? found : null;
+        // A different file shares no cards with the old one.
+        if (next?.path !== this.file?.path) this.snapshot = null;
+        this.file = next;
       }
     }
     await super.setState(state, result);
@@ -147,15 +213,41 @@ export class DictionaryEditorView extends ItemView {
     });
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (file.path === this.file?.path) void this.renderView();
+        if (file.path === this.file?.path) this.queueRepaint();
       }),
     );
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
-        if (file.path === this.file?.path) void this.renderView();
+        if (file.path === this.file?.path) this.queueRepaint();
       }),
     );
     return Promise.resolve();
+  }
+
+  override onClose(): Promise<void> {
+    if (this.repaintTimer !== null) window.clearTimeout(this.repaintTimer);
+    this.repaintTimer = null;
+    // Any pass still reading the file sees a new generation and gives up.
+    this.generation += 1;
+    this.clearCards();
+    this.releaseTheory();
+    this.shell = null;
+    this.snapshot = null;
+    this.contentEl.empty();
+    return Promise.resolve();
+  }
+
+  /**
+   * Repaint soon, once. Coalescing matters because the view's own writes come back
+   * to it as events — two per edit — and because a review session writes a card at
+   * a time.
+   */
+  private queueRepaint(): void {
+    if (this.repaintTimer !== null) return;
+    this.repaintTimer = window.setTimeout(() => {
+      this.repaintTimer = null;
+      void this.renderView();
+    }, REPAINT_DELAY);
   }
 
   /** Open internal/external links clicked anywhere in the view. */
@@ -175,14 +267,25 @@ export class DictionaryEditorView extends ItemView {
     }
   }
 
+  /** Tear the view down to a single message, and forget what was on screen. */
+  private showMessage(text: string): void {
+    this.clearCards();
+    this.releaseTheory();
+    this.shell = null;
+    this.snapshot = null;
+    this.contentEl.empty();
+    this.contentEl.createDiv({ cls: "obsictionary-view-empty", text });
+  }
+
   private async renderView(): Promise<void> {
+    this.generation += 1;
+    const generation = this.generation;
     const root = this.contentEl;
-    root.empty();
     root.addClass("obsictionary-view");
 
     const file = this.file;
     if (!file) {
-      root.createDiv({ cls: "obsictionary-view-empty", text: "No dictionary file." });
+      this.showMessage("No dictionary file.");
       return;
     }
     this.syncHeaderTitle(file);
@@ -190,16 +293,25 @@ export class DictionaryEditorView extends ItemView {
     try {
       doc = await readDictionary(this.app, file);
     } catch (err) {
+      // Guarded like the success path below: a read that failed for the file the
+      // view has since left would otherwise wipe the newer file's render and
+      // leave the pane showing an error about a note it is no longer on.
+      if (this.generation !== generation || this.file?.path !== file.path) return;
       const msg = errorMessage(err);
       new Notice(`Failed to read dictionary: ${msg}`);
-      root.createDiv({ cls: "obsictionary-view-empty", text: `Failed to read dictionary: ${msg}` });
+      this.showMessage(`Failed to read dictionary: ${msg}`);
       return;
     }
+    // A read that lost a race must not paint. Two passes overlap easily — a
+    // queued repaint and a `setState` from the Back button, say — and the order
+    // they finish in has nothing to do with the order they started: a cold read
+    // loses to a warm one. Whichever finished last would otherwise be recorded
+    // as the truth, so a stale pass could paint one file's words under another
+    // file's title, leaving every delete button on screen wired to the wrong
+    // file. Neither the file nor the generation is allowed to have moved.
+    if (this.generation !== generation || this.file?.path !== file.path) return;
     if (!doc) {
-      root.createDiv({
-        cls: "obsictionary-view-empty",
-        text: "This note is not an Obsictionary dictionary.",
-      });
+      this.showMessage("This note is not an Obsictionary dictionary.");
       return;
     }
 
@@ -218,29 +330,95 @@ export class DictionaryEditorView extends ItemView {
     const headers = doc.table?.headers ?? [];
     const front = frontColumnFor(headers);
     const backCols = contentColumns(headers).filter((h) => h !== front);
-
-    this.renderToolbar(root, file, doc);
-    this.renderStatsPanel(root, doc, headers);
-    this.renderTheory(root, doc, file);
-    renderDictionaryMeta(
-      root,
-      doc.frontmatter.properties,
-      file.path,
-      this.plugin.settings.properties,
+    // A row whose front cell is blank draws no card, so it is not one as far as
+    // the snapshot is concerned either — positions have to line up with the DOM.
+    // Blankness asked exactly as `isCardRow` asks it, or the two can disagree.
+    const entries = this.orderedRows(doc, front).filter(
+      ({ row }) => !isBlankCell(row[front] ?? ""),
     );
-    this.renderWords(root, file, this.orderedRows(doc, front), front, backCols);
+
+    const next: ViewSnapshot = {
+      headers: [...headers],
+      config: JSON.stringify(toFrontmatterValue(doc.frontmatter.config)),
+      properties: JSON.stringify(doc.frontmatter.properties),
+      theory: doc.theory,
+      sort: this.sortMode,
+      cards: cardSnapshots(entries, [front, ...backCols]),
+      schedule: scheduleSnapshot(doc.table?.rows ?? [], [SRS_COLUMN, DUE_COLUMN]),
+    };
+    const plan = planRender(this.snapshot, next);
+    if (planIsEmpty(plan)) {
+      this.snapshot = next;
+      return;
+    }
+
+    const shell = plan.full || !this.shell ? this.buildShell(root) : this.shell;
+    try {
+      if (plan.header) {
+        shell.toolbar.empty();
+        this.renderToolbar(shell.toolbar, file, doc);
+        shell.meta.empty();
+        renderDictionaryMeta(
+          shell.meta,
+          doc.frontmatter.properties,
+          file.path,
+          this.plugin.settings.properties,
+        );
+        // The view is a column flex with a gap, so a section left empty still
+        // claims a gap's worth of space. A dictionary with no properties to show
+        // is the normal case for a new one, and a note with no words table has no
+        // tiles either — neither should leave a hole.
+        shell.meta.toggle(shell.meta.childElementCount > 0);
+      }
+      if (plan.stats) {
+        this.renderStatsPanel(shell.stats, doc, headers);
+        shell.stats.toggle(shell.stats.childElementCount > 0);
+      }
+      if (plan.theory) this.renderTheory(shell.theory, doc, file);
+      if (plan.cards) {
+        this.renderWords(shell.cards, file, entries, front, backCols);
+      } else {
+        for (const position of plan.dirty) {
+          this.repaintCard(position, file, entries, front, backCols);
+        }
+      }
+    } catch (err) {
+      // Recorded only once the screen actually matches. A snapshot written before
+      // the paint would claim a half-drawn view was current, and the stale half
+      // would never be planned again — the next event would diff against it and
+      // come out empty.
+      this.snapshot = null;
+      // Most callers fire this render without awaiting it, so the rethrow becomes
+      // an unhandled rejection with nothing naming the view it came from.
+      console.error("Obsictionary: failed to render dictionary", file.path, err);
+      throw err;
+    }
+    this.snapshot = next;
+  }
+
+  /** Create the fixed sections, in display order, replacing whatever was there. */
+  private buildShell(root: HTMLElement): Shell {
+    this.clearCards();
+    this.releaseTheory();
+    root.empty();
+    const shell: Shell = {
+      toolbar: root.createDiv({ cls: "obsictionary-view-toolbar" }),
+      stats: root.createDiv(),
+      theory: root.createDiv(),
+      meta: root.createDiv(),
+      cards: root.createDiv({ cls: "obsictionary-cards" }),
+    };
+    this.shell = shell;
+    return shell;
   }
 
   /** Rows paired with their real table index, in the current sort order. */
-  private orderedRows(
-    doc: DictionaryDoc,
-    front: string,
-  ): { row: Record<string, string>; index: number }[] {
-    const entries = (doc.table?.rows ?? []).map((row, index) => ({ row, index }));
+  private orderedRows(doc: DictionaryDoc, front: string): RowEntry[] {
+    const entries: RowEntry[] = (doc.table?.rows ?? []).map((row, index) => ({ row, index }));
     if (this.sortMode === "manual") return entries;
     const col = this.sortMode === "due-asc" ? DUE_COLUMN : front;
-    const key = (e: { row: Record<string, string> }): string => (e.row[col] ?? "").trim();
-    entries.sort((a, b) => key(a).localeCompare(key(b)));
+    const key = (e: RowEntry): string => (e.row[col] ?? "").trim();
+    entries.sort((a, b) => COLLATOR.compare(key(a), key(b)));
     if (this.sortMode === "front-desc") entries.reverse();
     return entries;
   }
@@ -294,8 +472,8 @@ export class DictionaryEditorView extends ItemView {
     }
   }
 
-  private renderToolbar(root: HTMLElement, file: TFile, doc: DictionaryDoc): void {
-    const bar = root.createDiv({ cls: "obsictionary-view-toolbar" });
+  /** Renders into `bar` itself, which the shell already gave the toolbar class. */
+  private renderToolbar(bar: HTMLElement, file: TFile, doc: DictionaryDoc): void {
     this.toolButton(bar, "plus", "Add word", () => {
       this.promptAdd(file, doc);
     });
@@ -386,15 +564,32 @@ export class DictionaryEditorView extends ItemView {
   }
 
   /** Every tile starts the session it counts — the same ones the block renders. */
-  private renderStatsPanel(root: HTMLElement, doc: DictionaryDoc, headers: string[]): void {
+  private renderStatsPanel(section: HTMLElement, doc: DictionaryDoc, headers: string[]): void {
+    section.empty();
     if (!doc.table) return;
     const front = quickOptions(doc.frontmatter.config, headers).frontColumns;
     const stats = statsForRows(doc.table.rows, front, new Date());
-    const panel = root.createDiv({ cls: "obsictionary-view-stats" });
+    const panel = section.createDiv({ cls: "obsictionary-view-stats" });
     renderStatsGrid(panel, stats, this.plugin.statActions([doc.file]));
   }
 
+  /**
+   * Release the theory's markdown. Rendered markdown registers child components
+   * for embeds and the like; without unloading them each repaint would leave the
+   * last one's behind, and the view outlives every repaint.
+   */
+  private releaseTheory(): void {
+    if (!this.theoryComponent) return;
+    this.removeChild(this.theoryComponent);
+    this.theoryComponent = null;
+  }
+
   private renderTheory(root: HTMLElement, doc: DictionaryDoc, file: TFile): void {
+    this.releaseTheory();
+    root.empty();
+    const component = this.addChild(new Component());
+    this.theoryComponent = component;
+
     const hasTheory = doc.theory.trim() !== "";
     const section = root.createDiv({ cls: "obsictionary-view-theory" });
 
@@ -407,7 +602,7 @@ export class DictionaryEditorView extends ItemView {
 
     const bodyEl = section.createDiv({ cls: "obsictionary-theory-body" });
     if (hasTheory) {
-      void MarkdownRenderer.render(this.app, doc.theory, bodyEl, file.path, this);
+      void MarkdownRenderer.render(this.app, doc.theory, bodyEl, file.path, component);
     } else {
       bodyEl.createDiv({ cls: "obsictionary-view-empty is-inline", text: "Add theory…" });
     }
@@ -438,14 +633,25 @@ export class DictionaryEditorView extends ItemView {
     });
   }
 
+  /** Unload every card's markdown and drop the elements. */
+  private clearCards(): void {
+    for (const entry of this.cardEntries) this.removeChild(entry.component);
+    this.cardEntries = [];
+    // The dragged handle is gone, so its `dragend` will never fire. Left set, the
+    // index would make the next drag over a card — a file from the explorer, text
+    // from another pane — look like a reorder of a row that has since moved.
+    this.dragIndex = null;
+  }
+
   private renderWords(
-    root: HTMLElement,
+    list: HTMLElement,
     file: TFile,
-    entries: { row: Record<string, string>; index: number }[],
+    entries: RowEntry[],
     front: string,
     backCols: string[],
   ): void {
-    const list = root.createDiv({ cls: "obsictionary-cards" });
+    this.clearCards();
+    list.empty();
     if (entries.length === 0) {
       list.createDiv({
         cls: "obsictionary-view-empty",
@@ -453,59 +659,102 @@ export class DictionaryEditorView extends ItemView {
       });
       return;
     }
-    const canReorder = this.sortMode === "manual";
+    for (const entry of entries) {
+      const card = this.buildCard(file, entry, front, backCols);
+      list.appendChild(card.el);
+      this.cardEntries.push(card);
+    }
+  }
 
-    entries.forEach(({ row, index: rowIndex }) => {
-      if ((row[front] ?? "").trim() === "") return;
-      const card = list.createDiv({ cls: "obsictionary-card obsictionary-card-editable" });
-      if (canReorder) this.attachDragTarget(card, file, rowIndex);
+  /**
+   * Replace one card in place. This is what the render plan is for: an edited cell
+   * repaints that card and leaves the rest of the list — and all of its rendered
+   * markdown — alone. A grade never comes through here; no card shows `srs`/`due`,
+   * so the schedule moves the stat tiles only.
+   */
+  private repaintCard(
+    position: number,
+    file: TFile,
+    entries: RowEntry[],
+    front: string,
+    backCols: string[],
+  ): void {
+    const old = this.cardEntries[position];
+    const entry = entries[position];
+    // A detached card would make `replaceWith` a silent no-op, leaving the new
+    // card's component parented to the view while `cardEntries` claimed it was on
+    // screen. Nothing reaches here that way today; the check is what keeps that
+    // true rather than something to be rediscovered.
+    if (!old?.el.parentElement || !entry) return;
+    const next = this.buildCard(file, entry, front, backCols);
+    old.el.replaceWith(next.el);
+    this.removeChild(old.component);
+    this.cardEntries[position] = next;
+  }
 
-      if (canReorder) {
-        const handle = card.createDiv({
-          cls: "obsictionary-card-handle",
-          attr: { "aria-label": "Drag to reorder", draggable: "true" },
-        });
-        setIcon(handle, "grip-vertical");
-        handle.addEventListener("dragstart", (evt) => {
-          this.dragIndex = rowIndex;
-          card.addClass("is-dragging");
-          evt.dataTransfer?.setData("text/plain", rowIndex.toString());
-          if (evt.dataTransfer) evt.dataTransfer.effectAllowed = "move";
-        });
-        handle.addEventListener("dragend", () => {
-          this.dragIndex = null;
-          card.removeClass("is-dragging");
-          clearDropMarkers(list);
-        });
-      }
-
-      const del = card.createEl("button", {
-        cls: "obsictionary-card-delete",
-        attr: { "aria-label": "Delete word" },
+  /**
+   * One card, detached, owning a component for the markdown its cells render. The
+   * component is a child of the view so it unloads with it, and is removed when the
+   * card goes — otherwise every repaint would leave the previous render's embeds
+   * registered on a view that lives as long as the leaf does, which is what made a
+   * long editing session progressively slower.
+   */
+  private buildCard(
+    file: TFile,
+    { row, index: rowIndex }: RowEntry,
+    front: string,
+    backCols: string[],
+  ): CardEntry {
+    const component = this.addChild(new Component());
+    const card = createDiv({ cls: "obsictionary-card obsictionary-card-editable" });
+    if (this.sortMode === "manual") {
+      this.attachDragTarget(card, file, rowIndex);
+      const handle = card.createDiv({
+        cls: "obsictionary-card-handle",
+        attr: { "aria-label": "Drag to reorder", draggable: "true" },
       });
-      setIcon(del, "trash-2");
-      const word = (row[front] ?? "").trim();
-      del.addEventListener("click", () => {
-        new ConfirmModal(this.app, `Delete "${word}"?`, "Delete", () => {
-          void this.deleteWord(file, rowIndex);
-        }).open();
+      setIcon(handle, "grip-vertical");
+      handle.addEventListener("dragstart", (evt) => {
+        this.dragIndex = rowIndex;
+        card.addClass("is-dragging");
+        evt.dataTransfer?.setData("text/plain", rowIndex.toString());
+        if (evt.dataTransfer) evt.dataTransfer.effectAllowed = "move";
       });
+      handle.addEventListener("dragend", () => {
+        this.dragIndex = null;
+        card.removeClass("is-dragging");
+        if (card.parentElement) clearDropMarkers(card.parentElement);
+      });
+    }
 
-      const frontEl = card.createDiv({ cls: "obsictionary-word" });
-      this.renderEditable(frontEl, file, rowIndex, front, row[front] ?? "");
-
-      const fields = card.createDiv({ cls: "obsictionary-fields" });
-      for (const col of backCols) {
-        const field = fields.createDiv({ cls: "obsictionary-field" });
-        field.createSpan({ cls: "obsictionary-field-name", text: col });
-        const valueEl = field.createSpan({ cls: "obsictionary-field-value" });
-        this.renderEditable(valueEl, file, rowIndex, col, row[col] ?? "");
-      }
+    const del = card.createEl("button", {
+      cls: "obsictionary-card-delete",
+      attr: { "aria-label": "Delete word" },
     });
+    setIcon(del, "trash-2");
+    const word = (row[front] ?? "").trim();
+    del.addEventListener("click", () => {
+      new ConfirmModal(this.app, `Delete "${word}"?`, "Delete", () => {
+        void this.deleteWord(file, rowIndex);
+      }).open();
+    });
+
+    const frontEl = card.createDiv({ cls: "obsictionary-word" });
+    this.renderEditable(frontEl, component, file, rowIndex, front, row[front] ?? "");
+
+    const fields = card.createDiv({ cls: "obsictionary-fields" });
+    for (const col of backCols) {
+      const field = fields.createDiv({ cls: "obsictionary-field" });
+      field.createSpan({ cls: "obsictionary-field-name", text: col });
+      const valueEl = field.createSpan({ cls: "obsictionary-field-value" });
+      this.renderEditable(valueEl, component, file, rowIndex, col, row[col] ?? "");
+    }
+    return { el: card, component };
   }
 
   private renderEditable(
     el: HTMLElement,
+    component: Component,
     file: TFile,
     rowIndex: number,
     column: string,
@@ -518,17 +767,18 @@ export class DictionaryEditorView extends ItemView {
       el.setText("…");
     } else {
       el.removeClass("is-empty");
-      renderCellValue(this.app, el, value, file.path, this);
+      renderCellValue(this.app, el, value, file.path, component);
     }
     el.addEventListener("click", (evt) => {
       const target = evt.target as HTMLElement;
       if (target.closest("audio, video, img, a, .internal-embed, input")) return;
-      this.beginEdit(el, file, rowIndex, column, value);
+      this.beginEdit(el, component, file, rowIndex, column, value);
     });
   }
 
   private beginEdit(
     el: HTMLElement,
+    component: Component,
     file: TFile,
     rowIndex: number,
     column: string,
@@ -549,7 +799,7 @@ export class DictionaryEditorView extends ItemView {
       if (save && next !== "" && next !== value) {
         void this.editCell(file, rowIndex, column, next);
       } else {
-        this.renderEditable(el, file, rowIndex, column, value);
+        this.renderEditable(el, component, file, rowIndex, column, value);
       }
     });
   }
@@ -624,10 +874,10 @@ export class DictionaryEditorView extends ItemView {
   }
 
   private async review(file: TFile): Promise<void> {
-    await quickReview(this.app, [file], this.plugin.settings.fsrsRetention);
+    await quickReview(this.app, [file], this.plugin.reviewPrefs());
   }
 
   private async reviewWithOptions(file: TFile): Promise<void> {
-    await promptReview(this.app, [file], this.plugin.settings.fsrsRetention);
+    await promptReview(this.app, [file], this.plugin.reviewPrefs());
   }
 }

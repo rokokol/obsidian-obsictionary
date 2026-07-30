@@ -1,6 +1,6 @@
 import { setIcon, type MarkdownPostProcessorContext } from "obsidian";
 import { isManagedColumn, SRS_COLUMN } from "../model/dictionary";
-import { DICTIONARY_TAG } from "../obsidian/dictionaryFile";
+import { marksDictionary } from "../model/dictionaryConfig";
 import { frontColumnFor } from "../settings";
 import { renderDictionaryMeta } from "./meta";
 
@@ -11,13 +11,6 @@ function getFrontmatter(ctx: MarkdownPostProcessorContext): Record<string, unkno
   const fm: unknown = ctx.frontmatter;
   if (typeof fm !== "object" || fm === null) return null;
   return fm as Record<string, unknown>;
-}
-
-/** Reading mode sees only frontmatter, so detect via its `tags` list. */
-function isDictionaryFrontmatter(fm: Record<string, unknown>): boolean {
-  const tags = fm["tags"];
-  const list = Array.isArray(tags) ? tags : typeof tags === "string" ? [tags] : [];
-  return list.some((t) => typeof t === "string" && t.replace(/^#/, "") === DICTIONARY_TAG);
 }
 
 /** A table is the words table if it carries the front column and an srs column. */
@@ -80,7 +73,7 @@ export function renderDictionary(
   allowProperties: string[] = [],
 ): void {
   const fm = getFrontmatter(ctx);
-  if (!fm || !isDictionaryFrontmatter(fm)) return;
+  if (!fm || !marksDictionary(fm)) return;
 
   const tables = Array.from(el.querySelectorAll("table")).filter(
     (t): t is HTMLTableElement => t instanceof HTMLTableElement,

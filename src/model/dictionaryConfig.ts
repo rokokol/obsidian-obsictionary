@@ -22,9 +22,9 @@
 import { isManagedColumn } from "./dictionary";
 
 /**
- * Frontmatter key holding the plugin's per-dictionary config. Same spelling as
- * `DICTIONARY_TAG`, by coincidence rather than by coupling: one marks the note,
- * the other holds its settings.
+ * Frontmatter key holding the plugin's per-dictionary config — and, by its mere
+ * presence, the thing that makes a note a dictionary. One marker doing both jobs:
+ * two of them (this key and a tag) could disagree, and did.
  */
 export const CONFIG_KEY = "obsictionary";
 
@@ -110,6 +110,60 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return isPlainObject(value) ? value : null;
+}
+
+/**
+ * Whether frontmatter marks its note as a dictionary. Presence of the key is the
+ * whole test — a dictionary with no presets and no mute has nothing to put in it,
+ * so the value is routinely empty, and a value the parser cannot read is still a
+ * dictionary whose config happens to be broken.
+ *
+ * `Object.hasOwn` rather than `in`: a key named `toString` lives on every object's
+ * prototype chain, and `in` would call every note a dictionary.
+ */
+export function marksDictionary(frontmatter: unknown): boolean {
+  return isPlainObject(frontmatter) && Object.hasOwn(frontmatter, CONFIG_KEY);
+}
+
+/**
+ * The value that marks a note as a dictionary while saying nothing else.
+ *
+ * An empty mapping rather than a blank/null value, which would read the same to
+ * this plugin: a mapping is unmistakably a value, so it cannot be dropped by a
+ * YAML round-trip or filtered out of Obsidian's cached frontmatter. The key is a
+ * note's dictionary status, and that status must not rest on how a null survives
+ * three layers of serialization.
+ */
+export function emptyConfigValue(): Record<string, unknown> {
+  return {};
+}
+
+/**
+ * What to store under the config key, given whether the note already had one.
+ * `undefined` means "leave the note without the key" — this is a config write,
+ * not a way to turn any note into a dictionary. Otherwise an emptied config keeps
+ * the key present but empty, because losing it would un-dictionary the note.
+ */
+export function storedConfigValue(
+  config: DictionaryConfig,
+  hadKey: boolean,
+): Record<string, unknown> | undefined {
+  const value = toFrontmatterValue(config);
+  if (value !== null) return value;
+  return hadKey ? emptyConfigValue() : undefined;
+}
+
+/**
+ * Narrow a set of dictionaries to the ones that count toward vault-wide totals.
+ * Shared so the stats blocks, the reminders and the dashboard cannot drift into
+ * counting different things — they have before.
+ */
+export function countedDictionaries<T>(
+  items: readonly T[],
+  muted: (item: T) => boolean,
+  includeMuted: boolean,
+): T[] {
+  return includeMuted ? [...items] : items.filter((item) => !muted(item));
 }
 
 /**
@@ -236,9 +290,10 @@ function presetToValue(preset: ReviewPreset): Record<string, unknown> {
 }
 
 /**
- * The value to store under `obsictionary`, or null when the config is empty and
- * the key should be dropped instead. Unmodeled keys and unreadable preset entries
- * are written back untouched.
+ * The value to store under `obsictionary`, or null when the config has nothing
+ * worth storing. Null is not "drop the key" — the key is what makes the note a
+ * dictionary; `storedConfigValue` decides what an empty config becomes.
+ * Unmodeled keys and unreadable preset entries are written back untouched.
  */
 export function toFrontmatterValue(config: DictionaryConfig): Record<string, unknown> | null {
   if (isEmptyConfig(config)) return null;

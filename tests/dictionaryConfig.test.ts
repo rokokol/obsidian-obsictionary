@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   CONFIG_KEY,
+  countedDictionaries,
+  emptyConfig,
   isEmptyConfig,
   makePresetDefault,
+  marksDictionary,
   parseDictionaryConfig,
   removePreset,
   renamePreset,
+  storedConfigValue,
   toFrontmatterValue,
   upsertPreset,
   type DictionaryConfig,
@@ -386,5 +390,70 @@ describe("shadowed preset twins", () => {
     });
     removePreset(target, "Forward");
     expect(target.unreadable).toEqual([{ front: ["word"] }, "nonsense"]);
+  });
+});
+
+describe("marksDictionary", () => {
+  it("accepts frontmatter carrying the key, whatever it holds", () => {
+    expect(marksDictionary({ obsictionary: null })).toBe(true);
+    expect(marksDictionary({ obsictionary: {} })).toBe(true);
+    expect(marksDictionary({ obsictionary: { mute: true } })).toBe(true);
+    // Unreadable config, but still a dictionary — the note says so.
+    expect(marksDictionary({ obsictionary: "nonsense" })).toBe(true);
+  });
+
+  it("rejects frontmatter without the key", () => {
+    expect(marksDictionary({ tags: ["obsictionary"] })).toBe(false);
+    expect(marksDictionary({})).toBe(false);
+  });
+
+  it("rejects a missing or non-mapping frontmatter", () => {
+    expect(marksDictionary(null)).toBe(false);
+    expect(marksDictionary(undefined)).toBe(false);
+    expect(marksDictionary("obsictionary")).toBe(false);
+    expect(marksDictionary([])).toBe(false);
+  });
+
+  it("does not mistake an inherited key for the marker", () => {
+    expect(marksDictionary({ toString: "x" })).toBe(false);
+  });
+});
+
+describe("storedConfigValue", () => {
+  it("writes the serialized config when there is something to write", () => {
+    const config = emptyConfig();
+    config.mute = true;
+    expect(storedConfigValue(config, true)).toEqual({ mute: true });
+  });
+
+  it("keeps an existing key present but empty when the config empties out", () => {
+    // Losing the key here would un-dictionary the note: unmuting it, or deleting
+    // its last preset, would silently stop it being a dictionary at all.
+    expect(storedConfigValue(emptyConfig(), true)).toEqual({});
+  });
+
+  it("keeps the emptied value a mapping, not a null a round-trip could drop", () => {
+    expect(marksDictionary({ obsictionary: storedConfigValue(emptyConfig(), true) })).toBe(true);
+  });
+
+  it("leaves a note without the key alone", () => {
+    expect(storedConfigValue(emptyConfig(), false)).toBeUndefined();
+  });
+});
+
+describe("countedDictionaries", () => {
+  const muted = (item: { mute: boolean }): boolean => item.mute;
+  const items = [{ mute: false }, { mute: true }, { mute: false }];
+
+  it("drops muted dictionaries by default", () => {
+    expect(countedDictionaries(items, muted, false)).toEqual([{ mute: false }, { mute: false }]);
+  });
+
+  it("keeps every dictionary when muted ones count", () => {
+    expect(countedDictionaries(items, muted, true)).toEqual(items);
+  });
+
+  it("returns a copy, so a caller cannot mutate the source list", () => {
+    expect(countedDictionaries(items, muted, true)).not.toBe(items);
   });
 });

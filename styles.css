@@ -127,7 +127,8 @@
   padding: var(--size-4-6) 0;
 }
 
-/* The answer replaces the question, so it sits where the question was. */
+/* Sits under the question, and takes its place when the card turns over — see
+   the `is-joined` rules below for the default, where both stay. */
 .obsictionary-review-back {
   display: flex;
   flex-direction: column;
@@ -138,6 +139,17 @@
 /* Nothing to reveal: the question stays, so claim no space. */
 .obsictionary-review-back:empty {
   padding: 0;
+}
+
+/* Joined card: question and answer share the space instead of each claiming a
+   full card's worth of it, and a rule marks where the answer starts. */
+.obsictionary-review-modal.is-joined .obsictionary-review-front {
+  padding: var(--size-4-6) 0 var(--size-4-3);
+}
+
+.obsictionary-review-modal.is-joined .obsictionary-review-back:not(:empty) {
+  padding: var(--size-4-3) 0 var(--size-4-4);
+  border-top: 1px solid var(--background-modifier-border);
 }
 
 .obsictionary-review-field {
@@ -195,7 +207,14 @@
 /* Stats */
 .obsictionary-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  /* A track was allowed down to 70px while the tile inside refused to shrink
+     below its content, so LEARNING spilled out of it. The floor is now wide
+     enough for the longest label (~5.5rem covers eight uppercase glyphs at
+     --font-ui-smaller), the tiles below are told they may shrink, and `min()`
+     keeps a single narrow column from overflowing its container. Five tiles now
+     want ~480px before wrapping instead of ~390px, so a narrow sidebar breaks
+     them to two rows sooner — better than clipped text. */
+  grid-template-columns: repeat(auto-fit, minmax(min(5.5rem, 100%), 1fr));
   gap: var(--size-4-2);
 }
 
@@ -203,10 +222,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--size-4-2);
+  justify-content: center;
+  /* A flex/grid item will not shrink below its content unless told to. */
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--size-4-2) var(--size-4-1);
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
+  /* The clickable tile is a <button>, which inherits neither of these. */
+  font-family: inherit;
+  text-align: center;
+  line-height: var(--line-height-tight);
 }
 
 .obsictionary-stat-value {
@@ -215,10 +242,19 @@
 }
 
 .obsictionary-stat-label {
+  max-width: 100%;
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* Was 0.04em; trimmed because tracking on eight uppercase glyphs is what put
+     the longest label over the tile's edge in the first place. */
+  letter-spacing: 0.03em;
+  /* Last resort. The track floor above is sized so this never actually clips;
+     it is here so an unusually wide font degrades to an ellipsis instead of
+     pushing the grid past its container again. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .obsictionary-stat.is-due .obsictionary-stat-value {
@@ -675,4 +711,124 @@ body.obsictionary-hide-status .status-bar {
 
 .obsictionary-dashboard-actions button:hover {
   color: var(--text-normal);
+}
+
+/* Dictionary shelf: icon tiles above, a one-column list of text tiles below. */
+.obsictionary-tiles-view {
+  padding: var(--size-4-4);
+}
+
+.obsictionary-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 100%), 1fr));
+  gap: var(--size-4-3);
+  margin-bottom: var(--size-4-4);
+}
+
+.obsictionary-tile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.obsictionary-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  min-width: 0;
+  padding: var(--size-4-3);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  color: var(--text-normal);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* An icon tile stacks; a text tile in the list reads as a row. */
+.obsictionary-tile:not(.is-flat) {
+  flex-direction: column;
+  text-align: center;
+}
+
+.obsictionary-tile:hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  text-decoration: none;
+}
+
+.obsictionary-tile.is-muted {
+  opacity: 0.6;
+}
+
+.obsictionary-tile-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2em;
+  line-height: 1;
+}
+
+.obsictionary-tile-icon .svg-icon {
+  width: 2em;
+  height: 2em;
+}
+
+.obsictionary-tile-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.obsictionary-tile-name {
+  font-weight: var(--font-semibold);
+  /* Long dictionary names must not stretch the grid track. */
+  overflow-wrap: anywhere;
+}
+
+.obsictionary-tile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.obsictionary-tile:not(.is-flat) .obsictionary-tile-meta {
+  justify-content: center;
+}
+
+.obsictionary-tile-due {
+  color: var(--text-accent);
+}
+
+.obsictionary-tile-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Tucked into the corner so it never competes with the name for the click. */
+.obsictionary-tile-review {
+  position: absolute;
+  top: var(--size-4-1);
+  right: var(--size-4-1);
+  padding: var(--size-4-1);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  opacity: 0;
+}
+
+.obsictionary-tile:hover .obsictionary-tile-review,
+.obsictionary-tile-review:focus-visible {
+  opacity: 1;
+}
+
+.obsictionary-tile-review:hover {
+  color: var(--text-accent);
+}
+
+/* The "install Iconic" line under a setting that cannot be switched on yet. */
+.obsictionary-setting-hint {
+  margin-top: var(--size-2-2);
 }

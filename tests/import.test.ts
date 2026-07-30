@@ -22,7 +22,10 @@ describe("parseImport", () => {
   });
 
   it("skips blank lines and counts rows with any empty field as incomplete", () => {
-    const { rows, incomplete } = parseImport("\n| /kæt/ | кот\ncat | | кот\ndog | /dɒɡ/ | пёс\n", COLS);
+    const { rows, incomplete } = parseImport(
+      "\n| /kæt/ | кот\ncat | | кот\ndog | /dɒɡ/ | пёс\n",
+      COLS,
+    );
     expect(rows).toEqual([{ word: "dog", transcription: "/dɒɡ/", translation: "пёс" }]);
     expect(incomplete).toBe(2);
   });

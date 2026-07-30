@@ -1,8 +1,10 @@
 import { Notice, normalizePath, type App, type TFile, type TFolder } from "obsidian";
-import { contentColumns, DUE_COLUMN, SRS_COLUMN } from "../model/dictionary";
+import { contentColumns, DUE_COLUMN, eolOf, SRS_COLUMN } from "../model/dictionary";
+import { CONFIG_KEY } from "../model/dictionaryConfig";
 import { serializeTable, type MarkdownTable } from "../model/table";
 import {
-  DICTIONARY_TAG,
+  addDictionaryProperty,
+  needsDictionaryMigration,
   readDictionary,
   updateWordsTable,
   type DictionaryDoc,
@@ -51,7 +53,11 @@ export async function appendWords(
   };
   await app.vault.process(file, (data) => {
     const trimmed = data.replace(/\s+$/, "");
-    return `${trimmed}\n\n## Words\n\n${serializeTable(table)}\n`;
+    // The note's own line ending, not always LF: a section appended to a CRLF note
+    // with LF breaks leaves the file half and half, which every later diff shows.
+    const eol = eolOf(data);
+    const words = serializeTable(table).split("\n").join(eol);
+    return `${trimmed}${eol}${eol}## Words${eol}${eol}${words}${eol}`;
   });
 }
 
@@ -74,9 +80,9 @@ function availablePath(app: App, folder: string, base: string): string {
 }
 
 /**
- * Create a new, generic dictionary note (only the `#obsictionary` tag — no
- * vault-specific keys) with the given content columns, and return it. Without a
- * `parent` the note lands wherever Obsidian puts new notes.
+ * Create a new, generic dictionary note — nothing in it but the `obsictionary`
+ * property that makes it one — with the given content columns, and return it.
+ * Without a `parent` the note lands wherever Obsidian puts new notes.
  */
 export async function createDictionaryNote(
   app: App,
@@ -89,8 +95,11 @@ export async function createDictionaryNote(
   const table: MarkdownTable = { headers, rows: [] };
   const content = [
     "---",
-    "tags:",
-    `  - ${DICTIONARY_TAG}`,
+    // Empty on purpose: presets and mute are written into it later, and a fresh
+    // dictionary has neither. An empty mapping rather than a blank value, for the
+    // reason spelled out on `emptyConfigValue`, and it is also what the plugin
+    // itself writes when a config empties out — so this line never churns.
+    `${CONFIG_KEY}: {}`,
     "---",
     "## Words",
     "",
@@ -100,4 +109,35 @@ export async function createDictionaryNote(
   const file = await app.vault.create(path, content);
   new Notice(`Created ${file.basename}`);
   return file;
+}
+
+/** Notes still marked the old way: tagged `#obsictionary`, no property. */
+export function taggedWithoutProperty(app: App): TFile[] {
+  return app.vault.getMarkdownFiles().filter((file) => needsDictionaryMigration(app, file));
+}
+
+/** Outcome of a migration pass — reported as-is, successes and failures alike. */
+export interface MigrationResult {
+  converted: number;
+  failed: string[];
+}
+
+/**
+ * Give every note left over from the tag-based rule its `obsictionary` property.
+ *
+ * One unwritable note does not stop the pass: aborting halfway would leave the
+ * vault half-converted with no way to tell how far it got, and the notes that did
+ * work are the ones the user most wants back.
+ */
+export async function migrateTaggedDictionaries(app: App): Promise<MigrationResult> {
+  const result: MigrationResult = { converted: 0, failed: [] };
+  for (const file of taggedWithoutProperty(app)) {
+    try {
+      await addDictionaryProperty(app, file);
+      result.converted += 1;
+    } catch {
+      result.failed.push(file.basename);
+    }
+  }
+  return result;
 }

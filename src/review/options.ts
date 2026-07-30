@@ -37,14 +37,22 @@ export interface ReviewOptions {
   states?: State[];
 }
 
-/** The plugin's original behavior: first column asks, the rest answer. */
+/**
+ * The layout a dictionary without presets is reviewed with: first column asks,
+ * the rest answer.
+ *
+ * Shuffled, unlike a preset's own default: file order means the same words come
+ * up in the same sequence every time, and a dictionary is usually written in
+ * batches, so the schedule ends up rehearsing whole batches together. A preset
+ * that says `order: file` still gets file order — that one was asked for.
+ */
 export function defaultOptions(headers: string[]): ReviewOptions {
   const front = frontColumnFor(headers);
   return {
     frontColumns: front === "" ? [] : [front],
     backColumns: contentColumns(headers).filter((header) => header !== front),
     pool: "due",
-    order: "file",
+    order: "shuffled",
     record: true,
   };
 }

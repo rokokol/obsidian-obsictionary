@@ -1,7 +1,9 @@
 import { Component, Modal, type App } from "obsidian";
 import { previewDueDates, review, REVIEW_RATINGS, type ReviewRating } from "../model/srs";
+import { isBlankCell } from "../model/word";
 import { renderCellValue } from "../render/cellValue";
 import { writeReview, type ReviewItem } from "../review/collect";
+import type { ReviewPrefs } from "./prompts";
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -19,21 +21,22 @@ function formatInterval(now: Date, due: Date): string {
 /** Flashcard review session over a fixed list of items. */
 export class ReviewModal extends Modal {
   private readonly items: ReviewItem[];
-  private readonly retention: number;
+  private readonly prefs: ReviewPrefs;
   private readonly renderComponent = new Component();
   private index = 0;
   private revealed = false;
   /** Set while a grade is being written, to keep a second one from starting. */
   private grading = false;
 
-  constructor(app: App, items: ReviewItem[], retention: number) {
+  constructor(app: App, items: ReviewItem[], prefs: ReviewPrefs) {
     super(app);
     this.items = items;
-    this.retention = retention;
+    this.prefs = prefs;
   }
 
   override onOpen(): void {
     this.modalEl.addClass("obsictionary-review-modal");
+    if (this.prefs.keepQuestion) this.modalEl.addClass("is-joined");
     this.renderComponent.load();
     this.registerKeys();
     this.renderCard();
@@ -67,9 +70,13 @@ export class ReviewModal extends Modal {
     return this.items[this.index];
   }
 
-  /** Columns of `item` that would actually render — blank cells show nothing. */
+  /**
+   * Columns of `item` that would actually render — blank cells show nothing. Asked
+   * the same way a row is judged a card at all, so a cell of invisible characters is
+   * not given a labelled row of its own with nothing in it.
+   */
   private static filled(item: ReviewItem, columns: readonly string[]): string[] {
-    return columns.filter((col) => (item.fields[col] ?? "").trim() !== "");
+    return columns.filter((col) => !isBlankCell(item.fields[col] ?? ""));
   }
 
   /**
@@ -145,10 +152,13 @@ export class ReviewModal extends Modal {
     this.revealed = true;
 
     this.renderFields(back, item, item.backColumns, true);
-    // The card turns over: the answer takes the question's place rather than
-    // piling up under it. A card with nothing to show keeps its question, since
+    // Two ways to show the answer. Joined (the default), the answer settles in
+    // under the question, so the whole card is on screen at once — which is what
+    // you want when the fields are parts of one entry rather than two sides of a
+    // riddle. Otherwise the card turns over and the answer takes the question's
+    // place. Either way a card with nothing to show keeps its question, since
     // flipping to an empty face would just blank the modal.
-    if (ReviewModal.filled(item, item.backColumns).length > 0) {
+    if (!this.prefs.keepQuestion && ReviewModal.filled(item, item.backColumns).length > 0) {
       this.contentEl.querySelector<HTMLElement>(".obsictionary-review-front")?.remove();
     }
     controls.empty();
@@ -164,7 +174,7 @@ export class ReviewModal extends Modal {
     }
 
     const now = new Date();
-    const preview = previewDueDates(item.card, this.retention, now);
+    const preview = previewDueDates(item.card, this.prefs.retention, now);
     for (const rating of REVIEW_RATINGS) {
       const btn = controls.createEl("button", {
         cls: `obsictionary-rate obsictionary-rate-${rating}`,
@@ -195,7 +205,7 @@ export class ReviewModal extends Modal {
     if (!item?.record || this.grading) return;
     this.grading = true;
     try {
-      const next = review(item.card, rating, this.retention);
+      const next = review(item.card, rating, this.prefs.retention);
       await writeReview(this.app, item, next);
       this.index += 1;
       this.renderCard();

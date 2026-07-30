@@ -38,9 +38,16 @@ export function promptImportWords(
   }).open();
 }
 
-export interface ReviewSession {
-  /** FSRS target retention, from the plugin settings. */
+/** Session behaviour that comes from the plugin settings, not the dictionary. */
+export interface ReviewPrefs {
+  /** FSRS target retention. */
   retention: number;
+  /** Whether the answer joins the question on screen instead of replacing it. */
+  keepQuestion: boolean;
+}
+
+export interface ReviewSession {
+  prefs: ReviewPrefs;
   /** How each dictionary in the session is reviewed. */
   resolve: ResolveOptions;
   /**
@@ -74,16 +81,16 @@ export async function startReviewSession(
   }
   const order = session.order ?? gathered.order;
   const items = order === "shuffled" ? shuffle(gathered.items) : gathered.items;
-  new ReviewModal(app, items, session.retention).open();
+  new ReviewModal(app, items, session.prefs).open();
 }
 
 /**
  * The quick Review path: every dictionary runs its own first preset (or the
  * default layout), with no dialog in between.
  */
-export async function quickReview(app: App, files: TFile[], retention: number): Promise<void> {
+export async function quickReview(app: App, files: TFile[], prefs: ReviewPrefs): Promise<void> {
   await startReviewSession(app, files, {
-    retention,
+    prefs,
     order: null,
     resolve: (doc, headers) => quickOptions(doc.frontmatter.config, headers),
   });
@@ -93,11 +100,11 @@ export async function quickReview(app: App, files: TFile[], retention: number): 
 export async function reviewSlice(
   app: App,
   files: TFile[],
-  retention: number,
+  prefs: ReviewPrefs,
   slice: ReviewSlice,
 ): Promise<void> {
   await startReviewSession(app, files, {
-    retention,
+    prefs,
     order: null,
     resolve: (doc, headers) => applySlice(quickOptions(doc.frontmatter.config, headers), slice),
   });
@@ -108,7 +115,7 @@ export async function reviewSlice(
  * multi-dictionary session only offers the session-wide choices and leaves every
  * dictionary its own columns.
  */
-export async function promptReview(app: App, files: TFile[], retention: number): Promise<void> {
+export async function promptReview(app: App, files: TFile[], prefs: ReviewPrefs): Promise<void> {
   const single = files.length === 1 ? files[0] : undefined;
   const doc = single ? await readDictionary(app, single) : null;
   const headers = doc?.table?.headers ?? [];
@@ -122,7 +129,7 @@ export async function promptReview(app: App, files: TFile[], retention: number):
     headers,
     (choice) => {
       void startReviewSession(app, files, {
-        retention,
+        prefs,
         order: choice.order,
         resolve: (dictionary, dictionaryHeaders) => {
           // Without a shared column set, each dictionary keeps its own layout and

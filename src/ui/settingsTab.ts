@@ -1,12 +1,18 @@
-import { PluginSettingTab, Setting, type App } from "obsidian";
+import { PluginSettingTab, Setting, type App, type ToggleComponent } from "obsidian";
 import type ObsictionaryPlugin from "../main";
+import { iconicInstalled } from "../obsidian/iconic";
 import {
+  MAX_REMIND_MINUTES,
+  parseRemindMinutes,
   sanitizeColumns,
   sanitizePropertyKeys,
   SORT_LABELS,
   type DefaultView,
   type SortMode,
 } from "../settings";
+
+/** Where to send someone who does not have Iconic yet. */
+const ICONIC_URL = "https://github.com/gfxholo/iconic";
 
 export class ObsictionarySettingTab extends PluginSettingTab {
   private readonly plugin: ObsictionaryPlugin;
@@ -94,9 +100,39 @@ export class ObsictionarySettingTab extends PluginSettingTab {
           this.plugin.settings.properties = keys;
           text.setValue(keys.join(", "));
           void this.plugin.saveSettings();
-          this.plugin.refreshDictionaryViews();
+          this.plugin.refreshRendered();
         };
         text.inputEl.addEventListener("blur", commit);
+      });
+
+    new Setting(containerEl)
+      .setName("Keep the question when revealing")
+      .setDesc(
+        "Show the answer under the question instead of turning the card over, so " +
+          "every field ends up on one side.",
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.keepQuestionOnReveal);
+        toggle.onChange((value) => {
+          this.plugin.settings.keepQuestionOnReveal = value;
+          void this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Count muted dictionaries")
+      .setDesc(
+        "Include muted dictionaries in vault-wide stats and in the review-everything " +
+          "session. A single stats block can override this with +muted or -muted, " +
+          "on its own line or after the scope.",
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.statsIncludeMuted);
+        toggle.onChange((value) => {
+          this.plugin.settings.statsIncludeMuted = value;
+          void this.plugin.saveSettings();
+          this.plugin.refreshRendered();
+        });
       });
 
     new Setting(containerEl)
@@ -113,6 +149,58 @@ export class ObsictionarySettingTab extends PluginSettingTab {
       });
 
     this.renderReminders(containerEl);
+    this.renderIntegrations(containerEl);
+  }
+
+  /**
+   * The Iconic integration, drawn whether or not Iconic is installed: someone who
+   * has never heard of the plugin should still be able to learn from this tab that
+   * the shelf can show icons. Without it the toggle is disabled rather than hidden,
+   * because switching it on would change nothing.
+   *
+   * Only the disk can answer whether Iconic is there, so the row starts disabled
+   * and is enabled a tick later. That order round the other way would offer a
+   * switch that does nothing for as long as the check takes.
+   */
+  private renderIntegrations(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Integrations").setHeading();
+
+    const setting = new Setting(containerEl)
+      .setName("Icons from Iconic")
+      .setDesc(
+        "In the dictionary tiles view, give every dictionary you have set an Iconic " +
+          "icon for a picture tile, and list the rest below it. Off means one plain " +
+          "list.",
+      );
+
+    // Built now, shown only once the plugin is known to be missing — the check is
+    // usually a hit, and a "not installed" line that blinks past is worse than none.
+    const hint = setting.descEl.createDiv({ cls: "obsictionary-setting-hint" });
+    hint.hide();
+    hint.appendText("Needs the ");
+    hint.createEl("a", { href: ICONIC_URL, text: "Iconic" });
+    hint.appendText(" plugin, which this vault does not have.");
+
+    setting.addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.iconicIntegration);
+      toggle.setDisabled(true);
+      toggle.onChange((value) => {
+        this.plugin.settings.iconicIntegration = value;
+        void this.plugin.saveSettings();
+        this.plugin.refreshTiles();
+      });
+      void this.resolveIconic(toggle, hint);
+    });
+  }
+
+  /**
+   * Let the toggle go once Iconic is found, or explain why it will not move. Both
+   * elements may be detached by then — the tab was closed or redisplayed — in which
+   * case this writes to markup nobody sees, which is harmless.
+   */
+  private async resolveIconic(toggle: ToggleComponent, hint: HTMLElement): Promise<void> {
+    if (await iconicInstalled(this.app)) toggle.setDisabled(false);
+    else hint.show();
   }
 
   private renderReminders(containerEl: HTMLElement): void {
@@ -152,24 +240,34 @@ export class ObsictionarySettingTab extends PluginSettingTab {
         }).settingEl,
     );
 
-    const repeat = new Setting(containerEl).setDesc(
-      "Hours between reminders while Obsidian stays open. Zero means only on start-up.",
-    );
-    const repeatName = (hours: number): string =>
-      hours === 0 ? "Repeat: only on start-up" : `Repeat every ${hours} h`;
-    repeat.setName(repeatName(settings.remindEveryHours)).addSlider((slider) => {
-      slider.setLimits(0, 12, 1).setValue(settings.remindEveryHours);
-      // Dragging fires per step, so the name follows the handle but the setting
-      // is only saved — and the reminder clock only re-armed — once it is let go.
-      slider.onChange((value) => {
-        repeat.setName(repeatName(value));
+    const repeat = new Setting(containerEl)
+      .setName("Repeat every")
+      .setDesc(
+        `Minutes between reminders while Obsidian stays open, up to ${MAX_REMIND_MINUTES.toString()}. ` +
+          "Empty or zero means only on start-up.",
+      )
+      .addText((text) => {
+        // Left as a text field: `type="number"` hands back an empty string for
+        // anything it cannot parse, so a fumbled "soon" would be indistinguishable
+        // from clearing the field and would switch the reminder off silently.
+        text.inputEl.inputMode = "numeric";
+        text.inputEl.size = 6;
+        text.setPlaceholder("0");
+        text.setValue(
+          settings.remindEveryMinutes === 0 ? "" : settings.remindEveryMinutes.toString(),
+        );
+        // Committed on blur, like the other typed fields: re-arming on every
+        // keystroke would restart the clock once per digit, and "30" would spend
+        // a moment meaning three minutes.
+        const commit = (): void => {
+          const minutes = parseRemindMinutes(text.getValue(), settings.remindEveryMinutes);
+          settings.remindEveryMinutes = minutes;
+          text.setValue(minutes === 0 ? "" : minutes.toString());
+          void this.plugin.saveSettings();
+          this.plugin.remindersChanged();
+        };
+        text.inputEl.addEventListener("blur", commit);
       });
-      slider.sliderEl.addEventListener("change", () => {
-        settings.remindEveryHours = slider.getValue();
-        void this.plugin.saveSettings();
-        this.plugin.remindersChanged();
-      });
-    });
     dependent.push(repeat.settingEl);
 
     dependent.push(

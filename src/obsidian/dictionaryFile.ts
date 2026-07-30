@@ -3,16 +3,23 @@ import { locateWords, replaceTheory, replaceWordsTable } from "../model/dictiona
 import {
   CONFIG_KEY,
   emptyConfig,
+  emptyConfigValue,
   HIDDEN_PROPERTY_KEYS,
   isPlainObject,
+  marksDictionary,
   parseDictionaryConfig,
-  toFrontmatterValue,
+  storedConfigValue,
   type DictionaryConfig,
 } from "../model/dictionaryConfig";
 import type { MarkdownTable } from "../model/table";
 
-/** Tag that marks a note as an Obsictionary dictionary. */
-export const DICTIONARY_TAG = "obsictionary";
+/**
+ * Tag that used to mark a note as a dictionary. Detection now goes by the
+ * `obsictionary` property alone — one marker instead of two that could disagree,
+ * and the property is the thing the plugin actually reads. The tag survives only
+ * so the migration command can find notes written under the old rule.
+ */
+const LEGACY_DICTIONARY_TAG = "obsictionary";
 
 export interface DictionaryFrontmatter {
   /** Non-plugin keys shown in the properties mini-table (incl. related, nav). */
@@ -56,11 +63,29 @@ function frontmatterOf(app: App, file: TFile): Record<string, unknown> | null {
   return fm as Record<string, unknown>;
 }
 
-/** Whether a note is an Obsictionary dictionary — carries the `#obsictionary` tag. */
+/** Whether a note is a dictionary — it carries the `obsictionary` property. */
 export function isDictionaryFile(app: App, file: TFile): boolean {
+  return marksDictionary(frontmatterOf(app, file));
+}
+
+/** A note written under the old rule: tagged, but without the property. */
+export function needsDictionaryMigration(app: App, file: TFile): boolean {
+  if (isDictionaryFile(app, file)) return false;
   const cache = app.metadataCache.getFileCache(file);
   if (!cache) return false;
-  return (getAllTags(cache) ?? []).includes(`#${DICTIONARY_TAG}`);
+  return (getAllTags(cache) ?? []).includes(`#${LEGACY_DICTIONARY_TAG}`);
+}
+
+/**
+ * Give a tagged note the `obsictionary` property, making it a dictionary under
+ * the current rule. The tag is left alone: it is the user's, and plenty of vaults
+ * use it for their own queries.
+ */
+export async function addDictionaryProperty(app: App, file: TFile): Promise<void> {
+  await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+    if (marksDictionary(frontmatter)) return;
+    frontmatter[CONFIG_KEY] = emptyConfigValue();
+  });
 }
 
 /** Read and parse a dictionary note. Returns null if it is not a dictionary. */
@@ -97,7 +122,8 @@ export async function updateWordsTable(
 
 /**
  * Mutate the plugin's frontmatter config. The callback gets the parsed config and
- * changes it in place; an empty config drops the key instead of writing a stub.
+ * changes it in place; a config left with nothing in it keeps the key, holding an
+ * empty mapping, because the key is what marks the note as a dictionary.
  * The block is rewritten from the parsed model, so keys and preset entries the
  * parser cannot read are carried through verbatim (`extra`/`unreadable`) — a
  * hand-written config survives an unrelated edit like a mute toggle.
@@ -123,9 +149,10 @@ export async function updateDictionaryConfig(
     if (existing !== undefined && existing !== null && !isPlainObject(existing)) return;
     const config = parseDictionaryConfig(frontmatter);
     mutate(config);
-    const value = toFrontmatterValue(config);
-    if (value === null) Reflect.deleteProperty(frontmatter, CONFIG_KEY);
-    else frontmatter[CONFIG_KEY] = value;
+    // Presence asked the same way detection asks it, so a note cannot be a
+    // dictionary to one and not to the other.
+    const value = storedConfigValue(config, marksDictionary(frontmatter));
+    if (value !== undefined) frontmatter[CONFIG_KEY] = value;
     written = config;
   });
   return written;

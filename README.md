@@ -34,21 +34,25 @@ their order in the plugin settings. Audio/image attachments referenced with
 
 ```markdown
 ---
-tags:
-  - obsictionary
+obsictionary: {}
 level: B2
 ---
+
 > [!info]+ Theory
 > Any markdown here — callouts, images, formulas — is rendered as-is.
 
 ## Words
 
-| word       | transcription | translation | due        | srs |
-| ---------- | ------------- | ----------- | ---------- | --- |
+| word       | transcription  | translation | due        | srs |
+| ---------- | -------------- | ----------- | ---------- | --- |
 | ubiquitous | /juːˈbɪkwɪtəs/ | вездесущий  | 2026-07-10 |     |
 ```
 
-- A note is a dictionary because it carries the `obsictionary` tag.
+- A note is a dictionary because it carries the `obsictionary` property. The
+  property is where presets and mute live; on a fresh dictionary it is simply
+  empty. Notes marked the old way — with the `#obsictionary` tag — are found on
+  start-up, and **Convert tagged notes into dictionaries** adds the property to
+  them.
 - Everything **before** `## Words` is theory and rendered natively.
 - Columns are whatever the table defines. By default the **first** content column
   is the card front (the question) and the rest are the answer; a
@@ -71,11 +75,16 @@ corner opens a dialog where you choose:
   step.
 - **Cards** — only what is scheduled (`Due only`), or every word in the
   dictionary (`All cards`).
-- **Order** — dictionary order or shuffled. A vault-wide session shuffles the
-  dictionaries _together_, not each one in place.
+- **Order** — dictionary order or shuffled. A dictionary with no preset shuffles;
+  a preset does what it says. A vault-wide session shuffles the dictionaries
+  _together_, not each one in place.
 - **Record progress** — off means grading changes nothing on disk. Picking
   `All cards` turns it off by default: that is the "just go through the words"
   mode.
+
+By default the answer joins the question on screen rather than replacing it, so
+the whole entry ends up on one side of the card; **Keep the question when
+revealing** turns the card back over.
 
 Save a choice as a named **preset** and it lands in the note's frontmatter under
 the `obsictionary` key. The first preset is what the plain click runs — the
@@ -84,8 +93,6 @@ touched, so anything you hand-write there survives.
 
 ```yaml
 ---
-tags:
-  - obsictionary
 obsictionary:
   mute: false
   presets:
@@ -113,27 +120,46 @@ scheduled, `Total` is practice over every word without touching the schedule, an
 `New`/`Learning`/`Review` draw from all cards in that FSRS state. To embed stats
 in **another** note, use a code block:
 
-`````markdown
+````markdown
 ```obsictionary-stats
 vault
 ```
-`````
+````
 
 - empty body — stats for the current note (when it is a dictionary);
 - `vault` (or `all`) — an aggregate across every dictionary in the vault;
 - a dictionary name, path or `[[wiki-link]]` — stats for that specific dictionary.
+
+Muted dictionaries stay out of the `vault` aggregate; **Count muted dictionaries**
+in the settings changes that globally, and `+muted` / `-muted` overrides it for one
+block — on its own line or after the scope (`vault -muted`). A block naming one
+dictionary always shows it, muted or not.
 
 A block covering several dictionaries also lists them above the tiles, as links.
 
 Values are computed live on render, so nothing is written to frontmatter (it
 would go stale).
 
-## Dashboard
+## Dashboard and shelf
 
 The dashboard ribbon icon (or the **Open dictionary dashboard** command) opens a
 vault-wide overview:
 totals across every dictionary, then a row per dictionary with its numbers, a way
 in, a review button and a mute toggle.
+
+**Open dictionary tiles** shows the dictionaries and nothing else. Each tile shows
+what is due and opens the dictionary on click; hover or tab to it for a review
+button in its corner.
+
+The **Integrations** section of the settings has **Icons from Iconic**, off until
+you turn it on. Enabled, a dictionary you gave an icon to in
+[Iconic](https://github.com/gfxholo/iconic) gets a picture tile at the top and the
+rest fall into a single-column list of text tiles below, so the shelf follows a
+choice you already made instead of asking for it again; disabled, it is simply that
+list. Without Iconic installed the switch is shown but greyed out — there would be
+no icons to read. Iconic keeps them in `.obsidian`, which is inside the vault but
+raises no vault events, so the view's header has a **Reload icons** action for
+after you set one.
 
 ## Reminders
 
@@ -143,8 +169,8 @@ the status bar; clicking either reviews exactly the cards it counted. Settings:
 - **Remind me about due cards** — the master switch; off means no notice and no
   counter, and the plugin stops tracking due cards at all;
 - **On start-up** — the notice when Obsidian opens;
-- **Repeat every** — hours between reminders while Obsidian stays open; zero
-  means start-up only;
+- **Repeat every** — minutes between reminders while Obsidian stays open; empty
+  or zero means start-up only;
 - **Status bar counter** — the number, hidden when nothing is due.
 
 A single dictionary can be **muted** — from its toolbar, its file menu or the
