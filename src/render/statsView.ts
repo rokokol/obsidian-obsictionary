@@ -1,9 +1,11 @@
-import { Keymap, type App, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { State } from "ts-fsrs";
 import { tableCards } from "../model/cards";
+import type { IconicIcon } from "../model/iconic";
 import { isDue } from "../model/srs";
 import { readDictionary } from "../obsidian/dictionaryFile";
 import { quickOptions } from "../review/options";
+import { renderDictionaryTiles } from "./dictionaryTile";
 
 export interface Stats {
   total: number;
@@ -58,17 +60,6 @@ export async function statsForFile(app: App, file: TFile, now: Date): Promise<St
   return statsForRows(doc.table.rows, front, now);
 }
 
-/** Sum of several dictionaries' stats. */
-export async function statsForFiles(app: App, files: TFile[], now: Date): Promise<Stats> {
-  const total = emptyStats();
-  for (const file of files) {
-    const stats = await statsForFile(app, file, now);
-    if (!stats) continue;
-    for (const key of Object.keys(total) as (keyof Stats)[]) total[key] += stats[key];
-  }
-  return total;
-}
-
 /** What a tile does when clicked, keyed by the tile it belongs to. */
 export type StatKind = "total" | "due" | "new" | "learning" | "review";
 export type StatActions = Partial<Record<StatKind, () => void>>;
@@ -105,36 +96,68 @@ export function renderStatsGrid(el: HTMLElement, stats: Stats, actions: StatActi
   statCell(grid, "Review", stats.review, "review", actions.review);
 }
 
-/** Render an `obsictionary-stats` code block (aggregates the given files). */
+/** What a stats block needs to know about the dictionaries it covers. */
+export interface StatsBlockContext {
+  /** Iconic icons by path, empty when the integration is off. */
+  icons: Map<string, IconicIcon>;
+  muted: (file: TFile) => boolean;
+  /** Scopes that matched no dictionary, named so a typo is visible. */
+  missing?: string[];
+}
+
+/**
+ * Render an `obsictionary-stats` code block: a tile per dictionary it covers, then
+ * the totals across them.
+ *
+ * A tile rather than a bare link, and one for a single dictionary too. The block is
+ * usually the only thing in the note pointing at the dictionary, so it may as well
+ * be the way in — and with an Iconic icon it is the same tile the shelf shows,
+ * which makes a dictionary recognisable in both places.
+ */
 export async function renderStats(
   app: App,
   files: TFile[],
   el: HTMLElement,
   actions: StatActions = {},
+  context?: StatsBlockContext,
 ): Promise<void> {
   el.empty();
+  for (const scope of context?.missing ?? []) {
+    el.createDiv({ cls: "obsictionary-stats-empty", text: `No dictionary found for "${scope}".` });
+  }
   if (files.length === 0) {
-    el.createDiv({ cls: "obsictionary-stats-empty", text: "No dictionary found for stats." });
+    if ((context?.missing ?? []).length === 0) {
+      el.createDiv({ cls: "obsictionary-stats-empty", text: "No dictionary found for stats." });
+    }
     return;
   }
-  if (files.length > 1) renderDictionaryLinks(app, el, files);
-  renderStatsGrid(el, await statsForFiles(app, files, new Date()), actions);
+  const now = new Date();
+  // Keyed by path, and the tiles are drawn from the same map: a caller that passed
+  // the same dictionary twice gets one tile, not two tiles over one set of numbers.
+  const perFile = new Map<string, { file: TFile; stats: Stats | null }>();
+  for (const file of files) {
+    if (perFile.has(file.path)) continue;
+    perFile.set(file.path, { file, stats: await statsForFile(app, file, now) });
+  }
+  renderDictionaryTiles(
+    app,
+    el,
+    [...perFile.values()].map(({ file, stats }) => ({
+      file,
+      icon: context?.icons.get(file.path) ?? null,
+      stats,
+      muted: context?.muted(file) ?? false,
+    })),
+  );
+  renderStatsGrid(el, sumStats([...perFile.values()].map((entry) => entry.stats)), actions);
 }
 
-/** Links to each dictionary a multi-dictionary block covers. */
-function renderDictionaryLinks(app: App, el: HTMLElement, files: TFile[]): void {
-  const row = el.createDiv({ cls: "obsictionary-stats-links" });
-  for (const file of files) {
-    // An href makes the link keyboard-reachable; navigation is ours, so the
-    // default is always prevented.
-    const link = row.createEl("a", {
-      cls: "obsictionary-stats-link",
-      text: file.basename,
-      href: "#",
-    });
-    link.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      void app.workspace.getLeaf(Keymap.isModEvent(evt)).openFile(file);
-    });
+/** Add up what was already counted per dictionary. */
+function sumStats(all: (Stats | null)[]): Stats {
+  const total = emptyStats();
+  for (const stats of all) {
+    if (!stats) continue;
+    for (const key of Object.keys(total) as (keyof Stats)[]) total[key] += stats[key];
   }
+  return total;
 }

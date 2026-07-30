@@ -34,7 +34,7 @@ export function sanitizeColumns(input: string): string[] {
 export type DefaultView = "dictionary" | "markdown";
 
 /** Ordering of words in the interactive view. */
-export type SortMode = "manual" | "front-asc" | "front-desc" | "due-asc";
+export type SortMode = "manual" | "front-asc" | "front-desc" | "due-asc" | "shuffled";
 
 /** Human labels for each sort mode, in menu order. */
 export const SORT_LABELS: Record<SortMode, string> = {
@@ -42,6 +42,7 @@ export const SORT_LABELS: Record<SortMode, string> = {
   "front-asc": "Word A→Z",
   "front-desc": "Word Z→A",
   "due-asc": "Due first",
+  shuffled: "Random",
 };
 
 export interface ObsictionarySettings {

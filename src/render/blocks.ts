@@ -8,14 +8,25 @@ export function stringifyValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/** One line of a stats block: what to count, and whether muting applies to it. */
+export interface StatsScope {
+  /** `vault`/`all` for every dictionary, otherwise a name, path or `[[wiki-link]]`. */
+  text: string;
+  /** A flag written after this scope. Null defers to the block, then the setting. */
+  includeMuted: boolean | null;
+}
+
 /** What an `obsictionary-stats` block asks for. */
 export interface StatsBlockQuery {
   /**
-   * Empty for the current note, `vault`/`all` for every dictionary, otherwise a
-   * name, path or `[[wiki-link]]`.
+   * One entry per line, in the order written.
+   *
+   * A list rather than one string, because a block naming several dictionaries is
+   * the natural way to ask about a set of them — one link per line, as the links
+   * would be written anywhere else in the note.
    */
-  scope: string;
-  /** Whether muted dictionaries count. Null defers to the plugin setting. */
+  scopes: StatsScope[];
+  /** A flag on a line of its own, applying to the whole block. */
   includeMuted: boolean | null;
 }
 
@@ -32,13 +43,17 @@ const MUTE_FLAGS = new Map<string, boolean>([
 const TRAILING_FLAG = /\s+(\S+)$/;
 
 /**
- * Read a stats block body. Everything that is not a flag makes up the scope, so a
- * `[[wiki-link]]` with spaces in it survives; a flag is recognised on a line of
- * its own or trailing the scope (`vault -muted`), both of which read naturally.
+ * Read a stats block body. Every line that is not a flag is one scope, so a
+ * `[[wiki-link]]` with spaces in it survives whole; a flag is recognised on a line
+ * of its own or trailing a scope (`vault -muted`), both of which read naturally.
+ *
+ * A trailing flag belongs to its own line, which is how it reads — `vault -muted`
+ * above `[[Archive]]` says nothing about the archive. A flag on a line of its own
+ * sets the block's default instead.
  */
 export function parseStatsBlock(source: string): StatsBlockQuery {
   let includeMuted: boolean | null = null;
-  const scope: string[] = [];
+  const scopes: StatsScope[] = [];
   for (const raw of source.split("\n")) {
     let line = raw.trim();
     if (line === "") continue;
@@ -47,17 +62,22 @@ export function parseStatsBlock(source: string): StatsBlockQuery {
       includeMuted = whole;
       continue;
     }
+    let scopeMuted: boolean | null = null;
     const match = TRAILING_FLAG.exec(line);
     const last = match?.[1];
     const trailing = last === undefined ? undefined : MUTE_FLAGS.get(last.toLowerCase());
     if (match && trailing !== undefined) {
-      includeMuted = trailing;
+      scopeMuted = trailing;
       line = line.slice(0, match.index).trim();
-      if (line === "") continue;
+      if (line === "") {
+        // A flag with nothing before it is a block flag written with padding.
+        includeMuted = trailing;
+        continue;
+      }
     }
-    scope.push(line);
+    scopes.push({ text: line, includeMuted: scopeMuted });
   }
-  return { scope: scope.join(" "), includeMuted };
+  return { scopes, includeMuted };
 }
 
 interface ParsedWikilink {

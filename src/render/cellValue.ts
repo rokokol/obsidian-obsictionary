@@ -1,4 +1,5 @@
 import { MarkdownRenderer, type App, type Component, type TFile } from "obsidian";
+import { isPlainText } from "../model/plainText";
 
 const EMBED_RE = /!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g;
 const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "m4a", "flac", "aac", "3gp", "opus"]);
@@ -66,6 +67,17 @@ export function renderCellValue(
   sourcePath: string,
   component: Component,
 ): void {
+  // Nothing at all renders as nothing: the markdown renderer emits no paragraph for
+  // an empty string, and one here would add a blank line's worth of leading.
+  if (value === "") return;
+  // A cell with no markup in it is the common case, and the markdown renderer is
+  // the expensive one: a paragraph carrying the text reads the same and costs a DOM
+  // node. `dir="auto"` because that is what the renderer puts on its own paragraph,
+  // and a translation column is where a right-to-left language turns up.
+  if (isPlainText(value)) {
+    el.createEl("p", { text: value, attr: { dir: "auto" } });
+    return;
+  }
   const segments = segment(app, value, sourcePath);
   const hasMedia = segments.some((s) => "media" in s);
   if (!hasMedia) {

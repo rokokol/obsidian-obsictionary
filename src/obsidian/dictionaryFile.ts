@@ -100,14 +100,31 @@ export async function readDictionary(app: App, file: TFile): Promise<DictionaryD
 }
 
 /**
+ * A change to a words table, applied in place.
+ *
+ * Returning `false` calls the write off, and the file is left byte for byte as it
+ * was. Writing regardless is not free: it bumps the modification time, fires a
+ * `modify` event that every open view and the due cache react to, re-serializes the
+ * table through the column padding — reformatting a table the user had aligned by
+ * hand — and, on a synced vault, sends the file over the wire. A pass that changed
+ * nothing should cost none of that.
+ *
+ * Only an explicit `false` vetoes; returning nothing writes. The return type is
+ * `unknown` rather than `boolean | void` so that a mutator with nothing to say can
+ * stay a plain statement block — the cost being that a concise-body arrow returning
+ * a boolean vetoes silently, which is what this type exists to keep visible.
+ */
+export type TableMutation = (table: MarkdownTable) => unknown;
+
+/**
  * Atomically mutate the words table of a dictionary file. The callback receives
  * the parsed table and mutates it in place; frontmatter and theory are left
- * untouched. No-op if the file has no words table.
+ * untouched. No-op if the file has no words table, or if the mutation vetoes.
  */
 export async function updateWordsTable(
   app: App,
   file: TFile,
-  mutate: (table: MarkdownTable) => void,
+  mutate: TableMutation,
 ): Promise<void> {
   await app.vault.process(file, (data) => {
     const info = getFrontMatterInfo(data);
@@ -115,7 +132,7 @@ export async function updateWordsTable(
     const body = data.slice(info.contentStart);
     const loc = locateWords(body);
     if (!loc.table) return data;
-    mutate(loc.table);
+    if (mutate(loc.table) === false) return data;
     return pre + replaceWordsTable(body, loc.table);
   });
 }

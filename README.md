@@ -17,6 +17,8 @@ In the view you can:
 - edit any field inline — paste an attachment to embed it, or type `[[` for
   wiki-link autocomplete across every vault file;
 - drag the handle on a card to reorder (a line shows the insert position);
+- sort the list by word, by due date or at random — the toolbar's sort menu, with
+  the starting order in the settings. Picking **Random** again reshuffles;
 - delete a word (with confirmation);
 - edit the theory block live (written back above `## Words`);
 - review words as flashcards (scheduled with
@@ -59,8 +61,12 @@ level: B2
   [review preset](#reviewing) can split them any other way. New dictionaries
   start from the columns set in **New dictionary columns** in the plugin settings.
 - Add/import warn about missing fields; rows added by hand in the source are
-  cleaned up when the dictionary opens (gaps filled with the column name, empty
-  rows dropped, invalid `srs` reset).
+  cleaned up when the dictionary opens: gaps filled with the column name, empty
+  rows dropped, and a column with neither a name nor any content removed. An `srs`
+  cell the plugin cannot read is **not** touched — that cell is the only copy of a
+  word's history, so the word is reviewed as new (the next grade overwrites it) and
+  the view says which words are affected. The usual cause is an unescaped `|`
+  further along the row, which shifts every cell after it.
 - `srs` is a managed column (compact FSRS state); `due` is a readable copy.
 - Attachments are resolved vault-wide by basename via the Obsidian API — put them
   anywhere.
@@ -75,9 +81,10 @@ corner opens a dialog where you choose:
   step.
 - **Cards** — only what is scheduled (`Due only`), or every word in the
   dictionary (`All cards`).
-- **Order** — dictionary order or shuffled. A dictionary with no preset shuffles;
-  a preset does what it says. A vault-wide session shuffles the dictionaries
-  _together_, not each one in place.
+- **Order** — shuffled (the default) or dictionary order. Only a preset that says
+  `order: file` reviews in file order; a preset that says nothing shuffles like
+  everything else. A vault-wide session shuffles the dictionaries _together_, not
+  each one in place.
 - **Record progress** — off means grading changes nothing on disk. Picking
   `All cards` turns it off by default: that is the "just go through the words"
   mode.
@@ -100,7 +107,7 @@ obsictionary:
       front: [translation]
       back: [word, transcription]
       pool: all # due | all
-      order: shuffled # file | shuffled
+      order: file # shuffled (default) | file
       record: false
 ---
 ```
@@ -111,6 +118,13 @@ column the table no longer has still reviews, without it, and says so.
 Review scope (the active note or the whole vault) is a plugin setting; in
 vault scope each dictionary keeps its own columns and only the session-wide
 choices are applied on top.
+
+**Target retention** decides how long an interval FSRS is willing to give, and it is
+applied when a card is graded — so changing it leaves every date already on disk
+where it was. **Recompute schedule for current retention** brings them into line in
+one pass: it recomputes each interval from the stability already stored, moves only
+cards in the review state, and never touches what the plugin knows about your memory.
+It asks first, and says how much it moved.
 
 ## Stats
 
@@ -130,12 +144,31 @@ vault
 - `vault` (or `all`) — an aggregate across every dictionary in the vault;
 - a dictionary name, path or `[[wiki-link]]` — stats for that specific dictionary.
 
+One scope per line, so a block can cover any set of dictionaries — and a `+muted` /
+`-muted` written after a scope belongs to that line, while one on a line of its own
+sets the block's default:
+
+````markdown
+```obsictionary-stats
+[[Latin phrases]]
+[[English idioms]]
+```
+````
+
 Muted dictionaries stay out of the `vault` aggregate; **Count muted dictionaries**
 in the settings changes that globally, and `+muted` / `-muted` overrides it for one
 block — on its own line or after the scope (`vault -muted`). A block naming one
 dictionary always shows it, muted or not.
 
-A block covering several dictionaries also lists them above the tiles, as links.
+Above the numbers, every dictionary the block covers gets a tile of its own — its
+name, what is due in it, and a way in. With the Iconic integration on, a dictionary
+you gave an icon gets a picture tile like the ones on the shelf; the rest are a
+single-column list. A scope that matches nothing says so instead of quietly
+under-counting.
+
+Embedding a dictionary with `![[Some dictionary]]` shows the same card, rather than
+transcluding every word in it. `![[Some dictionary#Theory]]` still embeds that
+section as usual — asking for one part of a note is a different question.
 
 Values are computed live on render, so nothing is written to frontmatter (it
 would go stale).

@@ -8,11 +8,12 @@
 
 import type { Card, State } from "ts-fsrs";
 import { contentColumns } from "../model/dictionary";
-import type {
-  DictionaryConfig,
-  ReviewOrder,
-  ReviewPool,
-  ReviewPreset,
+import {
+  DEFAULT_ORDER,
+  type DictionaryConfig,
+  type ReviewOrder,
+  type ReviewPool,
+  type ReviewPreset,
 } from "../model/dictionaryConfig";
 import { isDue } from "../model/srs";
 import { frontColumnFor } from "../settings";
@@ -39,12 +40,7 @@ export interface ReviewOptions {
 
 /**
  * The layout a dictionary without presets is reviewed with: first column asks,
- * the rest answer.
- *
- * Shuffled, unlike a preset's own default: file order means the same words come
- * up in the same sequence every time, and a dictionary is usually written in
- * batches, so the schedule ends up rehearsing whole batches together. A preset
- * that says `order: file` still gets file order — that one was asked for.
+ * the rest answer, in the default order (see `DEFAULT_ORDER`).
  */
 export function defaultOptions(headers: string[]): ReviewOptions {
   const front = frontColumnFor(headers);
@@ -52,7 +48,7 @@ export function defaultOptions(headers: string[]): ReviewOptions {
     frontColumns: front === "" ? [] : [front],
     backColumns: contentColumns(headers).filter((header) => header !== front),
     pool: "due",
-    order: "shuffled",
+    order: DEFAULT_ORDER,
     record: true,
   };
 }

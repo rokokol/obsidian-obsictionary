@@ -15,7 +15,10 @@ import {
   taggedWithoutProperty,
   type MigrationResult,
 } from "./commands/dictionaryCommands";
+import { rescheduleAll } from "./commands/reschedule";
+import { tableCards } from "./model/cards";
 import { countedDictionaries, type DictionaryConfig } from "./model/dictionaryConfig";
+import type { IconicIcon } from "./model/iconic";
 import { DictionaryCache } from "./obsidian/cache";
 import {
   dictionaryConfig,
@@ -23,13 +26,15 @@ import {
   readDictionary,
   updateDictionaryConfig,
 } from "./obsidian/dictionaryFile";
-import { forgetIconicIcons } from "./obsidian/iconic";
+import { forgetIconicIcons, readIconicIcons } from "./obsidian/iconic";
 import { parseStatsBlock, parseWikilink } from "./render/blocks";
+import { renderDictionaryEmbeds } from "./render/dictionaryEmbed";
 import { renderDictionary, type ReviewMode } from "./render/dictionaryView";
 import { renderStats, type StatActions } from "./render/statsView";
 import { DueTracker } from "./review/dueTracker";
-import type { ReviewSlice } from "./review/options";
+import { quickOptions, type ReviewSlice } from "./review/options";
 import { DEFAULT_SETTINGS, migrateSettings, type ObsictionarySettings } from "./settings";
+import { ConfirmModal } from "./ui/confirmModal";
 import {
   promptAddWord,
   promptImportWords,
@@ -43,6 +48,17 @@ import { errorMessage, plural } from "./util";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./view/dashboardView";
 import { DICTIONARY_VIEW_TYPE, DictionaryEditorView } from "./view/dictionaryEditorView";
 import { DictionaryTilesView, TILES_VIEW_TYPE } from "./view/tilesView";
+
+/** "1 dictionary" / "4 dictionaries" — the one plural in the plugin that is irregular. */
+function dictionaries(count: number): string {
+  return `${count.toString()} ${count === 1 ? "dictionary" : "dictionaries"}`;
+}
+
+/** What an `obsictionary-stats` block resolved to: dictionaries, and scopes that found none. */
+interface StatsBlockFiles {
+  files: TFile[];
+  missing: string[];
+}
 
 export default class ObsictionaryPlugin extends Plugin {
   override settings: ObsictionarySettings = DEFAULT_SETTINGS;
@@ -59,6 +75,7 @@ export default class ObsictionaryPlugin extends Plugin {
     () => {
       this.dueChanged();
     },
+    (file) => this.readDueTimestamps(file),
   );
   private statusBarEl: HTMLElement | null = null;
   /** Handle of the repeating reminder, so a settings change can replace it. */
@@ -139,8 +156,19 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.registerMarkdownCodeBlockProcessor("obsictionary-stats", (source, el, ctx) => {
-      const files = this.statsFiles(source, ctx.sourcePath);
-      void renderStats(this.app, files, el, this.statActions(files));
+      void this.renderStatsBlock(this.statsFiles(source, ctx.sourcePath), el);
+    });
+
+    // An embed of a dictionary shows its stats instead of transcluding every word.
+    this.registerMarkdownPostProcessor((el, ctx) => {
+      renderDictionaryEmbeds(
+        el,
+        (target) => this.embeddedDictionary(target, ctx.sourcePath) !== null,
+        (target, container) => {
+          const file = this.embeddedDictionary(target, ctx.sourcePath);
+          if (file) void this.renderStatsBlock({ files: [file], missing: [] }, container);
+        },
+      );
     });
 
     this.addCommand({
@@ -167,6 +195,14 @@ export default class ObsictionaryPlugin extends Plugin {
       name: "Convert tagged notes into dictionaries",
       callback: () => {
         void this.migrateTagged();
+      },
+    });
+
+    this.addCommand({
+      id: "reschedule",
+      name: "Recompute schedule for current retention",
+      callback: () => {
+        this.promptReschedule();
       },
     });
 
@@ -472,6 +508,19 @@ export default class ObsictionaryPlugin extends Plugin {
     return Array.from(bar.children).every((el) => getComputedStyle(el).display === "none");
   }
 
+  /**
+   * Due timestamps of one dictionary, for the tracker. The rows counted are the ones
+   * its quick review would actually collect, so the number a reminder shows matches
+   * the session that reminder opens.
+   */
+  private async readDueTimestamps(file: TFile): Promise<number[] | null> {
+    const doc = await readDictionary(this.app, file);
+    if (!doc?.table || doc.frontmatter.config.mute) return null;
+    const front = quickOptions(doc.frontmatter.config, doc.table.headers).frontColumns;
+    if (front.length === 0) return null;
+    return tableCards(doc.table.rows, front, new Date()).map((card) => card.due.getTime());
+  }
+
   /** Re-apply the reminder settings; called by the settings tab on every change. */
   remindersChanged(): void {
     this.applyStatusBar();
@@ -742,27 +791,119 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   /**
-   * Files for an `obsictionary-stats` block: empty body → the current note;
-   * `vault`/`all` → every dictionary; otherwise a dictionary referenced by name,
-   * path or `[[wiki-link]]`.
+   * Files for an `obsictionary-stats` block: an empty body means the current note,
+   * and otherwise every line is a scope, in the order they were written.
    *
-   * Muted dictionaries drop out of the vault scope — a muted dictionary is one
-   * the user stepped away from, and counting it makes the vault total disagree
-   * with the reminder that opens the session. A block naming one dictionary
-   * always shows it: pointing at a dictionary is asking for its numbers, muted
-   * or not.
+   * Deduplicated by path, since a block may name a dictionary that `vault` already
+   * brought in, and counting it twice would double its numbers in the total.
    */
-  private statsFiles(source: string, sourcePath: string): TFile[] {
+  private statsFiles(source: string, sourcePath: string): StatsBlockFiles {
     const query = parseStatsBlock(source);
-    const arg = query.scope;
-    if (arg === "") return this.filesFromPath(sourcePath);
-    const scope = arg.toLowerCase();
-    if (scope === "vault" || scope === "all") {
-      return this.countedFiles(this.cache.files(), query.includeMuted);
+    if (query.scopes.length === 0) return { files: this.filesFromPath(sourcePath), missing: [] };
+    const seen = new Set<string>();
+    const files: TFile[] = [];
+    const missing: string[] = [];
+    for (const scope of query.scopes) {
+      const found = this.scopeFiles(
+        scope.text,
+        sourcePath,
+        scope.includeMuted ?? query.includeMuted,
+      );
+      // A scope that finds nothing is nearly always a typo in a link, and silently
+      // counting three dictionaries where four were asked for is a wrong number
+      // presented as a right one.
+      if (found.length === 0) missing.push(scope.text);
+      for (const file of found) {
+        if (seen.has(file.path)) continue;
+        seen.add(file.path);
+        files.push(file);
+      }
     }
-    const linkpath = parseWikilink(arg.replace(/^!/, ""))?.target ?? arg;
+    return { files, missing };
+  }
+
+  /**
+   * One scope of a stats block: `vault`/`all` for every dictionary, otherwise a
+   * dictionary referenced by name, path or `[[wiki-link]]`.
+   *
+   * Muted dictionaries drop out of the vault scope — a muted dictionary is one the
+   * user stepped away from, and counting it makes the vault total disagree with the
+   * reminder that opens the session. A scope naming one dictionary always shows it:
+   * pointing at a dictionary is asking for its numbers, muted or not.
+   */
+  private scopeFiles(scope: string, sourcePath: string, includeMuted: boolean | null): TFile[] {
+    const lower = scope.toLowerCase();
+    if (lower === "vault" || lower === "all") {
+      return this.countedFiles(this.cache.files(), includeMuted);
+    }
+    const linkpath = parseWikilink(scope.replace(/^!/, ""))?.target ?? scope;
     const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
     return file && isDictionaryFile(this.app, file) ? [file] : [];
+  }
+
+  /**
+   * Offer to recompute every stored schedule for the retention now set.
+   *
+   * Behind a confirmation because it rewrites the `srs` and `due` cells of every
+   * dictionary in the vault — the user's own files — and because the number of cards
+   * it would move is the useful thing to know before saying yes. Muted dictionaries
+   * are included: a schedule is a schedule whether or not it is being reminded about.
+   */
+  private promptReschedule(): void {
+    const files = this.cache.files();
+    if (files.length === 0) {
+      new Notice("No dictionaries to reschedule.");
+      return;
+    }
+    const retention = this.settings.fsrsRetention;
+    new ConfirmModal(
+      this.app,
+      `Recompute due dates in ${dictionaries(files.length)} for a target retention of ` +
+        `${retention.toString()}? Only cards in the review state move; what the plugin ` +
+        "knows about your memory is not changed.",
+      "Recompute",
+      () => {
+        void this.runReschedule(files, retention);
+      },
+    ).open();
+  }
+
+  private async runReschedule(files: TFile[], retention: number): Promise<void> {
+    const result = await rescheduleAll(this.app, files, retention);
+    this.dueTracker.invalidateAll();
+    this.refreshRendered();
+    const failed =
+      result.failed.length > 0 ? ` ${result.failed.length.toString()} could not be written.` : "";
+    if (result.moved === 0) {
+      new Notice(`Every schedule already matches a retention of ${retention.toString()}.${failed}`);
+      return;
+    }
+    new Notice(
+      `Moved ${result.moved.toString()} card${plural(result.moved)} in ` +
+        `${dictionaries(result.files)}.${failed}`,
+    );
+  }
+
+  /** The dictionary an embed points at, or null when it points elsewhere. */
+  private embeddedDictionary(target: string, sourcePath: string): TFile | null {
+    const file = this.app.metadataCache.getFirstLinkpathDest(target, sourcePath);
+    return file && isDictionaryFile(this.app, file) ? file : null;
+  }
+
+  /**
+   * Draw a stats block. The Iconic icons are fetched here rather than inside the
+   * renderer: the renderer is also the dashboard's, and only the block wants a tile
+   * per dictionary with the icon the shelf would show.
+   */
+  private async renderStatsBlock(block: StatsBlockFiles, el: HTMLElement): Promise<void> {
+    const icons = this.settings.iconicIntegration
+      ? await readIconicIcons(this.app)
+      : new Map<string, IconicIcon>();
+    await renderStats(this.app, block.files, el, this.statActions(block.files), {
+      icons,
+      muted: (file) => dictionaryConfig(this.app, file).mute,
+      missing: block.missing,
+    });
   }
 
   /**

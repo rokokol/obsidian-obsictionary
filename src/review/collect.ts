@@ -96,8 +96,10 @@ export async function writeReview(app: App, item: ReviewItem, card: Card): Promi
     if (!table.headers.includes(SRS_COLUMN)) table.headers.push(SRS_COLUMN);
     if (!table.headers.includes(DUE_COLUMN)) table.headers.push(DUE_COLUMN);
     const row = table.rows[item.rowIndex];
-    if (!row) return;
+    // The row moved or went away between the session gathering it and this write.
+    if (!row) return false;
     row[SRS_COLUMN] = encodeCard(card);
     row[DUE_COLUMN] = dueDateString(card);
+    return true;
   });
 }

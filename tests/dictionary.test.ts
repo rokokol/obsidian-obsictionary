@@ -93,20 +93,22 @@ describe("normalizeWords", () => {
 
   it("drops empty rows and fills gaps with the column name", () => {
     const table = make();
-    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 1, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 1, removedColumns: 0 });
     expect(table.rows).toEqual([
       { word: "cat", translation: "кот", srs: "" },
       { word: "dog", translation: "translation", srs: "" },
     ]);
   });
 
-  it("clears an invalid srs (and its due mirror)", () => {
+  it("leaves an unreadable srs and its due alone", () => {
+    // Reported to the reader instead of cleaned up: it is the only copy of that
+    // word's schedule, and a grade will overwrite it with a valid card anyway.
     const table: MarkdownTable = {
       headers: ["word", "due", "srs"],
       rows: [{ word: "cat", due: "2026-01-01", srs: "not json" }],
     };
-    expect(needsNormalize(table)).toBe(true);
+    expect(needsNormalize(table)).toBe(false);
     normalizeWords(table);
-    expect(table.rows).toEqual([{ word: "cat", due: "", srs: "" }]);
+    expect(table.rows).toEqual([{ word: "cat", due: "2026-01-01", srs: "not json" }]);
   });
 });

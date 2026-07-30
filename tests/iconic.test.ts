@@ -12,8 +12,28 @@ describe("parseIconicEntry", () => {
     });
   });
 
+  it("reads a bare icon id as an icon name", () => {
+    // Iconic stores more than Lucide: an icon another plugin registered comes out
+    // without the prefix (`excalidraw-icon`, `math-integral-x`, `arrowtab`). Treated
+    // as text, the id itself was printed where the picture belongs.
+    expect(parseIconicEntry({ icon: "math-integral-x" })).toEqual({
+      lucide: "math-integral-x",
+      emoji: null,
+      color: null,
+    });
+    expect(parseIconicEntry({ icon: "arrowtab" })?.lucide).toBe("arrowtab");
+  });
+
   it("reads an emoji icon as a glyph, not an icon name", () => {
     expect(parseIconicEntry({ icon: "📚" })).toEqual({ lucide: null, emoji: "📚", color: null });
+  });
+
+  it("does not mistake a name with capitals, spaces or punctuation for an icon id", () => {
+    // `setIcon` would draw nothing for these, and drawing nothing is worse than
+    // showing the glyph the user actually stored.
+    expect(parseIconicEntry({ icon: "Book" })?.emoji).toBe("Book");
+    expect(parseIconicEntry({ icon: "two words" })?.emoji).toBe("two words");
+    expect(parseIconicEntry({ icon: "-leading-dash" })?.emoji).toBe("-leading-dash");
   });
 
   it("keeps a multi-codepoint emoji whole", () => {

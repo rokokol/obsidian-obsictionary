@@ -277,16 +277,12 @@
   background: var(--background-modifier-hover);
 }
 
-.obsictionary-stats-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-1) var(--size-4-3);
-  margin-bottom: var(--size-4-2);
-  font-size: var(--font-ui-small);
-}
-
-.obsictionary-stats-link {
-  cursor: pointer;
+/* In a stats block the dictionary tiles sit above the numbers. Spelled out for both
+   halves of the shelf rather than leaning on the grid's own bottom margin, so the
+   gap does not depend on which kind of tile happens to come last. */
+.obsictionary-tile-list + .obsictionary-stats,
+.obsictionary-tiles + .obsictionary-stats {
+  margin-top: var(--size-4-3);
 }
 
 /* Hide Obsidian's status bar only while it is empty and a dictionary view is

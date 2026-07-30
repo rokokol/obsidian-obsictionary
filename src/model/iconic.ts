@@ -2,8 +2,9 @@
  * Reading the [Iconic](https://github.com/gfxholo/iconic) plugin's stored icons.
  *
  * Iconic keeps a `fileIcons` map in its own plugin data, keyed by vault-relative
- * path, each entry `{ icon?, color?, … }`. An icon is either a Lucide name with a
- * `lucide-` prefix or a literal emoji. Parsing is tolerant throughout: this is
+ * path, each entry `{ icon?, color?, … }`. An icon is a Lucide name under a
+ * `lucide-` prefix, the bare id of an icon some other plugin registered, or a
+ * literal emoji. Parsing is tolerant throughout: this is
  * another plugin's private file, it may be absent, and its shape may change — a
  * dictionary without a readable icon simply does not get a picture tile.
  *
@@ -59,6 +60,16 @@ export function iconicColor(value: unknown): string | null {
   return variable === undefined ? color : `var(${variable})`;
 }
 
+/**
+ * An icon id registered with Obsidian: lower-case ASCII words joined by dashes.
+ *
+ * Iconic stores more than Lucide names — an icon another plugin registered comes
+ * out bare (`excalidraw-icon`, `math-integral-x`, `arrowtab`). Handing those to
+ * `setIcon` is exactly right, while treating them as text prints the id where the
+ * picture should be, which is what a vault with such icons used to see.
+ */
+const ICON_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+
 /** One entry of Iconic's `fileIcons`, or null when there is no icon in it. */
 export function parseIconicEntry(value: unknown): IconicIcon | null {
   if (!isRecord(value)) return null;
@@ -70,8 +81,14 @@ export function parseIconicEntry(value: unknown): IconicIcon | null {
   // A bare `lucide-` leaves no name behind, and `setIcon("")` draws nothing at
   // all — which would put a blank square in the icon grid instead of letting the
   // dictionary fall through to the text list where it belongs.
-  return icon.length > LUCIDE_PREFIX.length && icon.startsWith(LUCIDE_PREFIX)
-    ? { lucide: icon.slice(LUCIDE_PREFIX.length), emoji: null, color }
+  if (icon.startsWith(LUCIDE_PREFIX)) {
+    const name = icon.slice(LUCIDE_PREFIX.length);
+    return name === ""
+      ? { lucide: null, emoji: icon, color }
+      : { lucide: name, emoji: null, color };
+  }
+  return ICON_ID_RE.test(icon)
+    ? { lucide: icon, emoji: null, color }
     : { lucide: null, emoji: icon, color };
 }
 

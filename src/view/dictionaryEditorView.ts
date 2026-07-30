@@ -14,6 +14,7 @@ import type ObsictionaryPlugin from "../main";
 import {
   contentColumns,
   DUE_COLUMN,
+  hasInvalidSrs,
   needsNormalize,
   normalizeWords,
   SRS_COLUMN,
@@ -21,6 +22,7 @@ import {
   type NormalizeSummary,
 } from "../model/dictionary";
 import { toFrontmatterValue } from "../model/dictionaryConfig";
+import type { MarkdownTable } from "../model/table";
 import { isBlankCell, sanitizeCell } from "../model/word";
 import {
   readDictionary,
@@ -36,7 +38,7 @@ import { quickOptions } from "../review/options";
 import { frontColumnFor, SORT_LABELS, type SortMode } from "../settings";
 import { ConfirmModal } from "../ui/confirmModal";
 import { promptAddWord, promptImportWords, promptReview, quickReview } from "../ui/prompts";
-import { errorMessage } from "../util";
+import { errorMessage, plural } from "../util";
 import {
   cardSnapshots,
   planIsEmpty,
@@ -44,6 +46,7 @@ import {
   scheduleSnapshot,
   type ViewSnapshot,
 } from "./renderPlan";
+import { sortRows, type RowEntry } from "./sortRows";
 
 export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
 
@@ -54,12 +57,6 @@ export const DICTIONARY_VIEW_TYPE = "obsictionary-view";
  * a single read of the file.
  */
 const REPAINT_DELAY = 150;
-
-/**
- * Built once instead of per comparison. `String.localeCompare` constructs a
- * collator on every call, which is the expensive half of sorting a long word list.
- */
-const COLLATOR = new Intl.Collator(undefined, { usage: "sort" });
 
 /** One rendered card, with the component owning whatever markdown it rendered. */
 interface CardEntry {
@@ -76,12 +73,6 @@ interface Shell {
   cards: HTMLElement;
 }
 
-/** A row paired with its index in the file's table. */
-interface RowEntry {
-  row: Record<string, string>;
-  index: number;
-}
-
 /** Human-readable summary of an auto-cleanup pass, for a Notice. */
 function describeNormalize(summary: NormalizeSummary): string {
   const parts: string[] = [];
@@ -89,7 +80,9 @@ function describeNormalize(summary: NormalizeSummary): string {
   if (summary.filledCells > 0) {
     parts.push(`filled ${summary.filledCells} blank cell(s) with placeholders`);
   }
-  if (summary.clearedSrs > 0) parts.push(`reset ${summary.clearedSrs} invalid card(s)`);
+  if (summary.removedColumns > 0) {
+    parts.push(`removed ${summary.removedColumns} unnamed empty column(s)`);
+  }
   return `Cleaned up dictionary: ${parts.join(", ")}.`;
 }
 
@@ -133,6 +126,12 @@ export class DictionaryEditorView extends ItemView {
   private file: TFile | null = null;
   private dragIndex: number | null = null;
   private sortMode: SortMode;
+  /**
+   * Seed of the random order. Fixed until the reader asks for a new shuffle, so a
+   * repaint re-derives the order it already drew instead of moving every card
+   * under the cursor whenever a cell is edited.
+   */
+  private shuffleSeed = Date.now();
   /** The fixed sections, or null when nothing is built yet. */
   private shell: Shell | null = null;
   /** What is on screen. Null forces the next repaint to rebuild everything. */
@@ -146,6 +145,13 @@ export class DictionaryEditorView extends ItemView {
    * pass can overtake it; the older one checks this before touching the DOM.
    */
   private generation = 0;
+  /**
+   * Whether the unreadable-schedule warning has been shown for the file on screen.
+   * Not tied to the snapshot: that is nulled by any settings change and by a failed
+   * paint, and a ten-second notice per open dictionary on every settings toggle is
+   * its own kind of broken.
+   */
+  private warnedUnreadable = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsictionaryPlugin) {
     super(leaf);
@@ -192,8 +198,12 @@ export class DictionaryEditorView extends ItemView {
       if (typeof path === "string") {
         const found = this.app.vault.getAbstractFileByPath(path);
         const next = found instanceof TFile ? found : null;
-        // A different file shares no cards with the old one.
-        if (next?.path !== this.file?.path) this.snapshot = null;
+        // A different file shares no cards with the old one, and its own broken rows
+        // are worth a word of their own.
+        if (next?.path !== this.file?.path) {
+          this.snapshot = null;
+          this.warnedUnreadable = false;
+        }
         this.file = next;
       }
     }
@@ -315,16 +325,26 @@ export class DictionaryEditorView extends ItemView {
       return;
     }
 
-    // Clean up rows added by hand in the source (fill gaps, drop empty rows,
-    // reset invalid srs/due). Report both what changed and any failure to persist.
+    // Clean up rows added by hand in the source (fill gaps, drop empty rows, drop a
+    // nameless empty column). Report both what changed and any failure to persist.
     if (doc.table && needsNormalize(doc.table)) {
       const summary = normalizeWords(doc.table);
       if (summaryChanged(summary)) new Notice(describeNormalize(summary));
-      void updateWordsTable(this.app, file, (table) => {
-        normalizeWords(table);
-      }).catch((err: unknown) => {
-        new Notice(`Failed to clean up srs/due in dictionary: ${errorMessage(err)}`);
+      void updateWordsTable(this.app, file, (table) =>
+        // The table on disk may already be clean — the copy on screen was normalized
+        // from a read that raced this write — and re-serializing it for nothing
+        // reformats a hand-aligned table and bounces an event back at this view.
+        summaryChanged(normalizeWords(table)),
+      ).catch((err: unknown) => {
+        new Notice(`Failed to clean up the dictionary: ${errorMessage(err)}`);
       });
+    }
+    // Said once per dictionary opened, not per repaint: the rows are not touched, so
+    // the warning would otherwise return on every keystroke until the user fixed a
+    // row they may not want to fix now.
+    if (doc.table && !this.warnedUnreadable) {
+      this.warnedUnreadable = true;
+      this.warnUnreadableCards(doc.table);
     }
 
     const headers = doc.table?.headers ?? [];
@@ -412,15 +432,34 @@ export class DictionaryEditorView extends ItemView {
     return shell;
   }
 
+  /**
+   * Warn about rows whose `srs` cell cannot be read, naming the words.
+   *
+   * They are reviewed as new cards and the next grade replaces the cell, so nothing
+   * is stuck — but the usual cause is a stray `|` further along the row, which has
+   * shifted the columns and is worth knowing about before the schedule is rewritten.
+   */
+  private warnUnreadableCards(table: MarkdownTable): void {
+    const front = frontColumnFor(table.headers);
+    const broken = table.rows.filter(hasInvalidSrs);
+    if (broken.length === 0) return;
+    const names = broken
+      .slice(0, 3)
+      .map((row: Record<string, string>) => row[front] ?? "?")
+      .join(", ");
+    const rest = broken.length > 3 ? ` and ${(broken.length - 3).toString()} more` : "";
+    new Notice(
+      `${broken.length.toString()} word${plural(broken.length)} with an unreadable ` +
+        `schedule (${names}${rest}). They will be reviewed as new; check those rows ` +
+        "for an unescaped |.",
+      10000,
+    );
+  }
+
   /** Rows paired with their real table index, in the current sort order. */
   private orderedRows(doc: DictionaryDoc, front: string): RowEntry[] {
     const entries: RowEntry[] = (doc.table?.rows ?? []).map((row, index) => ({ row, index }));
-    if (this.sortMode === "manual") return entries;
-    const col = this.sortMode === "due-asc" ? DUE_COLUMN : front;
-    const key = (e: RowEntry): string => (e.row[col] ?? "").trim();
-    entries.sort((a, b) => COLLATOR.compare(key(a), key(b)));
-    if (this.sortMode === "front-desc") entries.reverse();
-    return entries;
+    return sortRows(entries, this.sortMode, front, this.shuffleSeed);
   }
 
   /**
@@ -515,6 +554,9 @@ export class DictionaryEditorView extends ItemView {
             .setTitle(label)
             .setChecked(this.sortMode === mode)
             .onClick(() => {
+              // Picking Random again is how a reader asks for a different order,
+              // so the seed moves on every pick rather than only on a change.
+              if (mode === "shuffled") this.shuffleSeed = Date.now();
               this.sortMode = mode as SortMode;
               void this.renderView();
             });
@@ -811,15 +853,21 @@ export class DictionaryEditorView extends ItemView {
     value: string,
   ): Promise<void> {
     await updateWordsTable(this.app, file, (table) => {
-      if (!table.headers.includes(column)) table.headers.push(column);
       const row = table.rows[rowIndex];
-      if (row) row[column] = value;
+      // The row went away while the field was being edited; adding the column for a
+      // value nobody will hold is not a change worth writing.
+      if (!row) return false;
+      if (!table.headers.includes(column)) table.headers.push(column);
+      row[column] = value;
+      return true;
     });
   }
 
   private async deleteWord(file: TFile, rowIndex: number): Promise<void> {
     await updateWordsTable(this.app, file, (table) => {
-      if (rowIndex >= 0 && rowIndex < table.rows.length) table.rows.splice(rowIndex, 1);
+      if (rowIndex < 0 || rowIndex >= table.rows.length) return false;
+      table.rows.splice(rowIndex, 1);
+      return true;
     });
   }
 
@@ -857,11 +905,12 @@ export class DictionaryEditorView extends ItemView {
   /** Move row `from` so it lands at pre-removal index `insertBefore`. */
   private async reorder(file: TFile, from: number, insertBefore: number): Promise<void> {
     await updateWordsTable(this.app, file, (table) => {
-      if (from < 0 || from >= table.rows.length) return;
+      if (from < 0 || from >= table.rows.length) return false;
       const [moved] = table.rows.splice(from, 1);
-      if (!moved) return;
+      if (!moved) return false;
       const idx = from < insertBefore ? insertBefore - 1 : insertBefore;
       table.rows.splice(Math.max(0, Math.min(idx, table.rows.length)), 0, moved);
+      return true;
     });
   }
 

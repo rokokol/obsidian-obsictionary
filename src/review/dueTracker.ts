@@ -1,7 +1,10 @@
 import type { App, TFile } from "obsidian";
-import { tableCards } from "../model/cards";
-import { readDictionary } from "../obsidian/dictionaryFile";
-import { quickOptions } from "./options";
+
+/**
+ * Due timestamps of one dictionary, or null when it does not count towards
+ * reminders at all (no words table, or muted).
+ */
+export type ReadDueTimestamps = (file: TFile) => Promise<number[] | null>;
 
 /**
  * How many cards are waiting, without re-reading the vault to find out.
@@ -20,10 +23,17 @@ export class DueTracker {
   private disposed = false;
   private refreshed = false;
 
+  /**
+   * `read` is injected rather than called directly, which leaves this module with
+   * only type-level Obsidian imports (`app` is still used, for `getFileByPath`). That
+   * is enough to unit-test the coalescing, the staleness bookkeeping and the
+   * arithmetic — the parts that can go quietly wrong.
+   */
   constructor(
     private readonly app: App,
     private readonly files: () => TFile[],
     private readonly onChange: () => void,
+    private readonly read: ReadDueTimestamps,
   ) {}
 
   /**
@@ -113,7 +123,7 @@ export class DueTracker {
         // are already out of `stale`, so an escaping error would freeze the
         // count until the user happens to edit some other dictionary.
         try {
-          const timestamps = await this.readDue(file);
+          const timestamps = await this.read(file);
           if (timestamps) this.due.set(path, timestamps);
           else this.due.delete(path);
         } catch {
@@ -128,19 +138,6 @@ export class DueTracker {
     if (this.disposed) return;
     this.refreshed = true;
     this.onChange();
-  }
-
-  /**
-   * Due timestamps of one dictionary, or null when it does not count. The rows
-   * counted are the ones its quick review would actually collect, so the number
-   * a reminder shows matches the session that reminder opens.
-   */
-  private async readDue(file: TFile): Promise<number[] | null> {
-    const doc = await readDictionary(this.app, file);
-    if (!doc?.table || doc.frontmatter.config.mute) return null;
-    const front = quickOptions(doc.frontmatter.config, doc.table.headers).frontColumns;
-    if (front.length === 0) return null;
-    return tableCards(doc.table.rows, front, new Date()).map((card) => card.due.getTime());
   }
 
   dispose(): void {

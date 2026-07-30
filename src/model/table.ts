@@ -10,6 +10,21 @@ export interface MarkdownTable {
   headers: string[];
   /** Each row maps a header name to its cell text. Missing cells are "". */
   rows: Record<string, string>[];
+  /**
+   * Names invented for columns whose header cell was blank, so the rest of the
+   * plugin can tell them from a column the user actually named.
+   *
+   * A row is keyed by header name, so two blank headers cannot both be `""` — the
+   * second is numbered like any other duplicate. Without this list that invented
+   * name would read as a real one: it would be filled with itself as a placeholder,
+   * and written into the user's header row.
+   */
+  blankHeaders?: string[];
+}
+
+/** Whether a column stands for a header cell the user left empty. */
+export function isBlankHeader(table: MarkdownTable, header: string): boolean {
+  return header.trim() === "" || (table.blankHeaders?.includes(header) ?? false);
 }
 
 /**
@@ -89,15 +104,18 @@ const NOTHING_PROTECTED: ProtectedColumns = () => false;
  * Owned columns are numbered too — a duplicated `srs` header must not cost a word
  * its schedule either. Whether `srs 2` is still owned is the predicate's business.
  */
-function uniqueHeaders(headers: string[]): string[] {
+function uniqueHeaders(headers: string[]): { headers: string[]; blank: string[] } {
   const seen = new Set<string>();
-  return headers.map((header) => {
+  const blank: string[] = [];
+  const out = headers.map((header) => {
     let name = header;
     // Trimmed so a repeat of the nameless column comes out as "2", not " 2".
     for (let n = 2; seen.has(name); n++) name = `${header} ${n.toString()}`.trim();
     seen.add(name);
+    if (name !== header && header.trim() === "") blank.push(name);
     return name;
   });
+  return { headers: out, blank };
 }
 
 /**
@@ -158,14 +176,14 @@ export function parseTable(
     if (!headerLine.includes("|")) continue;
     if (!isDelimiterRow(delimLine)) continue;
 
-    const headers = uniqueHeaders(splitRow(headerLine));
+    const { headers, blank } = uniqueHeaders(splitRow(headerLine));
     const rows: Record<string, string>[] = [];
     for (let j = i + 2; j < lines.length; j++) {
       const line = lines[j];
       if (line === undefined || !line.includes("|") || line.trim() === "") break;
       rows.push(rowFromCells(headers, splitRow(line), isProtected));
     }
-    return { headers, rows };
+    return { headers, rows, ...(blank.length > 0 ? { blankHeaders: blank } : {}) };
   }
   return null;
 }
@@ -173,7 +191,11 @@ export function parseTable(
 /** Serialize a table back to GFM markdown with padded columns. */
 export function serializeTable(table: MarkdownTable): string {
   const { headers, rows } = table;
-  const escHeaders = headers.map(escapeCell);
+  // An invented name exists only to key the row; the header cell it came from was
+  // empty and stays empty, so the numbering never reaches the user's file.
+  const escHeaders = headers.map((header) =>
+    isBlankHeader(table, header) ? "" : escapeCell(header),
+  );
   const escRows = rows.map((row) => {
     const escaped: Record<string, string> = {};
     for (const h of headers) escaped[h] = escapeCell(row[h] ?? "");

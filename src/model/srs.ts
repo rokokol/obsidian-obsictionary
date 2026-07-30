@@ -1,4 +1,12 @@
-import { createEmptyCard, fsrs, generatorParameters, Rating, type Card, type Grade } from "ts-fsrs";
+import {
+  createEmptyCard,
+  fsrs,
+  generatorParameters,
+  Rating,
+  State,
+  type Card,
+  type Grade,
+} from "ts-fsrs";
 
 /** The four review grades exposed in the UI. */
 export type ReviewRating = "again" | "hard" | "good" | "easy";
@@ -129,6 +137,39 @@ export function previewDueDates(
   return Object.fromEntries(
     REVIEW_RATINGS.map((rating) => [rating, f.next(card, now, GRADE[rating]).card.due]),
   ) as Record<ReviewRating, Date>;
+}
+
+/** A day, in milliseconds — the unit FSRS intervals come back in. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The same card rescheduled for a different target retention, or null when there is
+ * nothing to move.
+ *
+ * Retention decides how long an interval FSRS is willing to give a memory of a known
+ * stability, and it is applied when a card is graded — so changing the setting leaves
+ * every existing `due` where it was, computed under the old target. This recomputes
+ * one from the stability already stored: the memory model is untouched, only the
+ * interval derived from it.
+ *
+ * Only a card in the review state is touched. A new card is due now by definition,
+ * and learning and relearning steps are fixed minutes that retention has no say in;
+ * moving those would be inventing a schedule rather than restating one.
+ */
+export function rescheduleCard(card: Card, retention: number, now: Date = new Date()): Card | null {
+  if (card.state !== State.Review || !card.last_review) return null;
+  const elapsed = Math.max(0, (now.getTime() - card.last_review.getTime()) / DAY_MS);
+  // `elapsed` only reaches the interval through FSRS's fuzz, which `scheduler` leaves
+  // at its default of off — so the same card gives the same answer today and next
+  // month, and a card that did not move is skipped below. Turning fuzz on would make
+  // that skip stop firing and this command rewrite every card, every run.
+  const days = scheduler(retention).next_interval(card.stability, Math.round(elapsed));
+  if (days === card.scheduled_days) return null;
+  return {
+    ...card,
+    scheduled_days: days,
+    due: new Date(card.last_review.getTime() + days * DAY_MS),
+  };
 }
 
 /** Whether the card is due for review at `now`. */

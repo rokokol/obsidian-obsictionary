@@ -1,5 +1,11 @@
 import { decodeCard } from "./srs";
-import { isDelimiterRow, parseTable, serializeTable, type MarkdownTable } from "./table";
+import {
+  isBlankHeader,
+  isDelimiterRow,
+  parseTable,
+  serializeTable,
+  type MarkdownTable,
+} from "./table";
 import { isBlankCell } from "./word";
 
 /** Heading that marks the start of the words table inside a dictionary note. */
@@ -44,18 +50,32 @@ export function contentColumns(headers: string[]): string[] {
   return headers.filter((header) => !isManagedColumn(header));
 }
 
-/** A non-empty `srs` cell that doesn't decode to a card is garbage. */
-function hasInvalidSrs(row: Record<string, string>): boolean {
+/**
+ * A non-empty `srs` cell that does not decode to a card.
+ *
+ * Not cleaned up, only counted. The cell is the one copy of that word's review
+ * history, and the usual way it becomes unreadable is a column shift — an unescaped
+ * pipe earlier in the row moves every cell along, so `srs` ends up holding a date.
+ * Clearing it turns a misplaced value into a deleted one; leaving it costs nothing,
+ * since a card that cannot be read is treated as new and the next grade writes a
+ * valid card over it.
+ */
+export function hasInvalidSrs(row: Record<string, string>): boolean {
   const srs = (row[SRS_COLUMN] ?? "").trim();
   return srs !== "" && decodeCard(srs) === null;
 }
 
-/** Whether a hand-edited table has gaps, empty rows, or invalid `srs` to clean. */
-export function needsNormalize(table: MarkdownTable): boolean {
-  const content = contentColumns(table.headers);
-  return table.rows.some(
-    (row) => content.some((c) => isBlankCell(row[c] ?? "")) || hasInvalidSrs(row),
-  );
+/**
+ * Content columns with a real name.
+ *
+ * A nameless column is not a field: filling its blank cells would write the column's
+ * own name into them, which for this column is the empty string — so the fill never
+ * takes, and the cleanup reports the same "filled N cells" on every open, forever.
+ * The parser's invented name for a second blank header counts as nameless too, or
+ * that column would be filled with the digit it was numbered with.
+ */
+function namedContentColumns(table: MarkdownTable): string[] {
+  return contentColumns(table.headers).filter((header) => !isBlankHeader(table, header));
 }
 
 /** What a `normalizeWords` pass touched, so callers can report it. */
@@ -64,52 +84,123 @@ export interface NormalizeSummary {
   removedRows: number;
   /** Blank content cells filled with their column name as a placeholder. */
   filledCells: number;
-  /** Rows whose invalid `srs` (and `due` mirror) were cleared. */
-  clearedSrs: number;
+  /** Nameless, empty columns dropped. */
+  removedColumns: number;
+}
+
+/** The whole cleanup, worked out but not yet applied. */
+interface NormalizePlan {
+  /** Rows that survive, in order — the same objects, not copies. */
+  rows: Record<string, string>[];
+  /** Columns to drop entirely. */
+  columns: string[];
+  summary: NormalizeSummary;
+}
+
+/**
+ * Work out the cleanup: which rows go, which columns go, which gaps get a
+ * placeholder.
+ *
+ * One function so that `needsNormalize` and `normalizeWords` can never disagree.
+ * They did: a column was judged empty against the rows *before* the empty ones were
+ * dropped, so a row that held the only value in a nameless column made the column
+ * look occupied — and once that row went, the column was droppable after all. The
+ * result was two cleanups, two notices and two writes for one edit.
+ */
+function planNormalize(table: MarkdownTable): NormalizePlan {
+  const content = namedContentColumns(table);
+  // With no content column there is nothing to judge a row by, and "no content"
+  // read as "empty" used to delete every row — a whole schedule, on open, for a
+  // table whose only fault was that its word column had not been added yet.
+  const rows =
+    content.length === 0
+      ? [...table.rows]
+      : table.rows.filter((row) => content.some((c) => !isBlankCell(row[c] ?? "")));
+  // Judged on the rows that survive, since those are the ones that will be written.
+  // A column with neither a header nor a value is a stray pipe in the header row;
+  // one that does hold something is left alone, unnamed or not — the text is the
+  // user's.
+  const columns = table.headers.filter(
+    (header) => isBlankHeader(table, header) && rows.every((row) => isBlankCell(row[header] ?? "")),
+  );
+  let gaps = 0;
+  for (const row of rows) {
+    for (const column of content) {
+      if (isBlankCell(row[column] ?? "")) gaps += 1;
+    }
+  }
+  return {
+    rows,
+    columns,
+    summary: {
+      removedRows: table.rows.length - rows.length,
+      filledCells: gaps,
+      removedColumns: columns.length,
+    },
+  };
+}
+
+/**
+ * Whether a hand-edited table has anything to clean: gaps, empty rows, or a
+ * nameless empty column.
+ *
+ * Unreadable `srs` cells are deliberately not in this list — see `hasInvalidSrs`.
+ */
+export function needsNormalize(table: MarkdownTable): boolean {
+  return summaryChanged(planNormalize(table).summary);
 }
 
 /** Whether a normalize summary reflects any actual change. */
 export function summaryChanged(summary: NormalizeSummary): boolean {
-  return summary.removedRows > 0 || summary.filledCells > 0 || summary.clearedSrs > 0;
+  return summary.removedRows > 0 || summary.filledCells > 0 || summary.removedColumns > 0;
 }
 
 /**
- * Clean up a hand-edited words table: drop rows with no content at all, fill any
- * remaining blank content cell with its column name (so no gap is left), and
- * clear an invalid `srs` (with its `due` mirror) so the row reads as a new card.
- * Mutates the table in place; returns a summary of what changed.
+ * Clean up a hand-edited words table: drop a nameless empty column, drop rows with
+ * no content at all, and fill any remaining blank content cell with its column name
+ * so no gap is left. Mutates the table in place; returns a summary of what changed.
+ *
+ * One pass settles it — `needsNormalize` is false straight afterwards — because the
+ * plan is worked out against the rows that survive, and dropping a nameless column
+ * cannot empty a row that the named columns had kept.
+ *
+ * An `srs` cell the plugin cannot read is left exactly as it is — see
+ * `hasInvalidSrs` for why destroying it is the worse answer.
  */
 export function normalizeWords(table: MarkdownTable): NormalizeSummary {
-  const content = contentColumns(table.headers);
-  const hasDue = table.headers.includes(DUE_COLUMN);
-  // With no content column there is nothing to judge a row by, and "no content"
-  // read as "empty" used to delete every row — a whole schedule, on open, for a
-  // table whose only fault was that its word column had not been added yet.
-  const kept =
-    content.length === 0
-      ? [...table.rows]
-      : table.rows.filter((row) => content.some((c) => !isBlankCell(row[c] ?? "")));
-  const summary: NormalizeSummary = {
-    removedRows: table.rows.length - kept.length,
-    filledCells: 0,
-    clearedSrs: 0,
-  };
+  const plan = planNormalize(table);
   table.rows.length = 0;
-  table.rows.push(...kept);
+  table.rows.push(...plan.rows);
+  if (plan.columns.length > 0) {
+    table.headers = table.headers.filter((header) => !plan.columns.includes(header));
+    if (table.blankHeaders) {
+      const left = table.blankHeaders.filter((header) => !plan.columns.includes(header));
+      if (left.length > 0) table.blankHeaders = left;
+      else delete table.blankHeaders;
+    }
+    // Rebuilt rather than deleted key by key: the row must not keep a cell for a
+    // column that is gone, or a later widening of the table would resurrect it.
+    const trimmed = table.rows.map((row) =>
+      Object.fromEntries(Object.entries(row).filter(([key]) => !plan.columns.includes(key))),
+    );
+    table.rows.length = 0;
+    table.rows.push(...trimmed);
+  }
+  // Counted here rather than taken from the plan: the column trim above may have
+  // replaced the row objects the plan was built from, and a count that came from one
+  // traversal while the writing happened in another could drift from what the notice
+  // claims. The number is asserted against the plan's, since they cannot differ.
+  let filled = 0;
+  const columns = namedContentColumns(table);
   for (const row of table.rows) {
-    for (const c of content) {
-      if (isBlankCell(row[c] ?? "")) {
-        row[c] = c;
-        summary.filledCells++;
+    for (const column of columns) {
+      if (isBlankCell(row[column] ?? "")) {
+        row[column] = column;
+        filled += 1;
       }
     }
-    if (hasInvalidSrs(row)) {
-      row[SRS_COLUMN] = "";
-      if (hasDue) row[DUE_COLUMN] = "";
-      summary.clearedSrs++;
-    }
   }
-  return summary;
+  return { ...plan.summary, filledCells: filled };
 }
 
 export interface WordsLocation {

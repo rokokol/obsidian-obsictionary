@@ -46,6 +46,15 @@ export type ReviewPool = "due" | "all";
 /** Card order within a session. */
 export type ReviewOrder = "file" | "shuffled";
 
+/**
+ * What a session does when nothing says otherwise.
+ *
+ * File order rehearses the same words in the same sequence every time, and a
+ * dictionary is written in batches, so the schedule ends up drilling whole batches
+ * together. `order: file` in a preset is honoured — that one was asked for.
+ */
+export const DEFAULT_ORDER: ReviewOrder = "shuffled";
+
 /** A saved, named way of reviewing one dictionary. */
 export interface ReviewPreset {
   name: string;
@@ -193,7 +202,12 @@ function asPool(value: unknown): ReviewPool {
 }
 
 function asOrder(value: unknown): ReviewOrder {
-  return value === "shuffled" ? "shuffled" : "file";
+  if (value === "shuffled") return "shuffled";
+  if (value === "file") return "file";
+  // Anything else, including a missing key, is the default. A preset that says
+  // nothing about order gets the same shuffle a dictionary with no presets does;
+  // it would be odd for saving a field layout to quietly pin the order to the file.
+  return DEFAULT_ORDER;
 }
 
 /** Parse one preset entry. Returns null when it has no usable name. */
@@ -284,7 +298,7 @@ function presetToValue(preset: ReviewPreset): Record<string, unknown> {
   const out: Record<string, unknown> = { name: preset.name, front: [...preset.front] };
   if (preset.back.length > 0) out["back"] = [...preset.back];
   if (preset.pool !== "due") out["pool"] = preset.pool;
-  if (preset.order !== "file") out["order"] = preset.order;
+  if (preset.order !== DEFAULT_ORDER) out["order"] = preset.order;
   if (preset.record !== defaultRecord(preset.pool)) out["record"] = preset.record;
   return withExtra(out, preset.extra, KNOWN_PRESET_KEYS);
 }

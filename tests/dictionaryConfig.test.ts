@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CONFIG_KEY,
   countedDictionaries,
+  DEFAULT_ORDER,
   emptyConfig,
   isEmptyConfig,
   makePresetDefault,
@@ -22,7 +23,7 @@ function preset(overrides: Partial<ReviewPreset> = {}): ReviewPreset {
     front: ["word"],
     back: ["translation"],
     pool: "due",
-    order: "file",
+    order: DEFAULT_ORDER,
     record: true,
     extra: {},
     ...overrides,
@@ -146,6 +147,22 @@ describe("parseDictionaryConfig", () => {
       [CONFIG_KEY]: { presets: [{ name: "Odd", front: ["word"], pool: "some", order: "other" }] },
     });
     expect(config.presets[0]?.pool).toBe("due");
+    expect(config.presets[0]?.order).toBe(DEFAULT_ORDER);
+  });
+
+  it("shuffles a preset that says nothing about order", () => {
+    // Saving a field layout should not quietly pin the order to the file: a preset
+    // with no `order` gets the same shuffle a dictionary without presets gets.
+    const config = parseDictionaryConfig({
+      [CONFIG_KEY]: { presets: [{ name: "Forward", front: ["word"] }] },
+    });
+    expect(config.presets[0]?.order).toBe("shuffled");
+  });
+
+  it("honours an explicit file order", () => {
+    const config = parseDictionaryConfig({
+      [CONFIG_KEY]: { presets: [{ name: "Forward", front: ["word"], order: "file" }] },
+    });
     expect(config.presets[0]?.order).toBe("file");
   });
 });
@@ -167,7 +184,7 @@ describe("toFrontmatterValue", () => {
 
   it("writes non-default fields", () => {
     const value = toFrontmatterValue(
-      config({ mute: true, presets: [preset({ pool: "all", order: "shuffled", record: true })] }),
+      config({ mute: true, presets: [preset({ pool: "all", order: "file", record: true })] }),
     );
     expect(value).toEqual({
       mute: true,
@@ -177,7 +194,7 @@ describe("toFrontmatterValue", () => {
           front: ["word"],
           back: ["translation"],
           pool: "all",
-          order: "shuffled",
+          order: "file",
           record: true,
         },
       ],
@@ -259,7 +276,7 @@ describe("toFrontmatterValue", () => {
       extra: { retention: 0.85 },
       presets: [
         preset({ extra: { note: "hand-written" } }),
-        preset({ name: "Cram", pool: "all", order: "shuffled", record: false }),
+        preset({ name: "Cram", pool: "all", order: "file", record: false }),
       ],
       unreadable: [{ front: ["word"] }],
     });

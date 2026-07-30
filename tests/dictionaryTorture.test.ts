@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isCardRow, tableCards } from "../src/model/cards";
 import {
   contentColumns,
+  hasInvalidSrs,
   isManagedColumn,
   locateWords,
   needsNormalize,
@@ -10,7 +11,7 @@ import {
   replaceWordsTable,
   summaryChanged,
 } from "../src/model/dictionary";
-import type { MarkdownTable } from "../src/model/table";
+import { parseTable, serializeTable, type MarkdownTable } from "../src/model/table";
 
 const TABLE = ["| word | tr |", "| ---- | -- |", "| cat  | кот |"].join("\n");
 
@@ -337,7 +338,7 @@ describe("managed columns", () => {
       headers: ["word", "SRS", "Due"],
       rows: [{ word: "cat", SRS: "", Due: "" }],
     };
-    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 2, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 2, removedColumns: 0 });
     expect(table.rows).toEqual([{ word: "cat", SRS: "SRS", Due: "Due" }]);
   });
 });
@@ -358,7 +359,7 @@ describe("a words table whose header repeats a managed column", () => {
       rows: [{ word: "cat", srs: "", "srs 2": "" }],
     };
     expect(needsNormalize(table)).toBe(false);
-    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 0, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 0, removedColumns: 0 });
   });
 });
 
@@ -366,7 +367,7 @@ describe("needsNormalize and normalizeWords", () => {
   it("fills a blank content cell with the column name and counts it", () => {
     const table: MarkdownTable = { headers: ["word", "tr"], rows: [{ word: "cat", tr: "  " }] };
     expect(needsNormalize(table)).toBe(true);
-    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 1, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 1, removedColumns: 0 });
     expect(table.rows).toEqual([{ word: "cat", tr: "tr" }]);
   });
 
@@ -375,14 +376,14 @@ describe("needsNormalize and normalizeWords", () => {
       headers: ["word", "tr", "srs"],
       rows: [{ word: "", tr: "\t", srs: "keep me" }],
     };
-    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 0, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 0, removedColumns: 0 });
     expect(table.rows).toEqual([]);
   });
 
   it("drops a row object that has no keys at all", () => {
     const table: MarkdownTable = { headers: ["word", "srs"], rows: [{}] };
     expect(needsNormalize(table)).toBe(true);
-    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 0, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 1, filledCells: 0, removedColumns: 0 });
   });
 
   it("treats a cell of only a non-breaking space as a gap to fill", () => {
@@ -397,7 +398,7 @@ describe("needsNormalize and normalizeWords", () => {
     // character defeat every gap check and produce a card that showed nothing.
     const table: MarkdownTable = { headers: ["word", "tr"], rows: [{ word: "cat", tr: "\u200B" }] };
     expect(needsNormalize(table)).toBe(true);
-    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 1, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 1, removedColumns: 0 });
     expect(table.rows).toEqual([{ word: "cat", tr: "tr" }]);
   });
 
@@ -408,49 +409,119 @@ describe("needsNormalize and normalizeWords", () => {
       headers: ["srs", "due"],
       rows: [{ srs: '{"s":0,"r":0,"l":0,"S":1,"D":5,"e":0,"c":0,"d":"2026-01-01T00:00:00.000Z"}' }],
     };
-    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 0, clearedSrs: 0 });
+    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 0, removedColumns: 0 });
     expect(table.rows).toHaveLength(1);
   });
 
-  it("clears srs that is not JSON at all and mirrors the change into due", () => {
+  it("keeps an srs that is not JSON at all, and the due beside it", () => {
+    // The cell is the one copy of that word's history, and the usual cause is a
+    // column shift from an unescaped pipe — clearing it turns a misplaced value into
+    // a deleted one. The card reads as new until the next grade writes over it.
     const table: MarkdownTable = {
       headers: ["word", "srs", "due"],
       rows: [{ word: "cat", srs: "not json", due: "2026-01-01" }],
     };
-    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 0, clearedSrs: 1 });
-    expect(table.rows).toEqual([{ word: "cat", srs: "", due: "" }]);
+    expect(needsNormalize(table)).toBe(false);
+    expect(normalizeWords(table)).toEqual({ removedRows: 0, filledCells: 0, removedColumns: 0 });
+    expect(table.rows).toEqual([{ word: "cat", srs: "not json", due: "2026-01-01" }]);
   });
 
-  it("clears valid JSON whose shape is not a card", () => {
-    const table: MarkdownTable = {
-      headers: ["word", "srs"],
-      rows: [
-        { word: "cat", srs: '{"s":1}' },
-        { word: "dog", srs: "[1,2]" },
-        { word: "ox", srs: "7" },
-      ],
-    };
-    expect(needsNormalize(table)).toBe(true);
-    expect(normalizeWords(table).clearedSrs).toBe(3);
-    expect(table.rows).toEqual([
-      { word: "cat", srs: "" },
-      { word: "dog", srs: "" },
-      { word: "ox", srs: "" },
-    ]);
+  it("keeps valid JSON whose shape is not a card, and reports it as unreadable", () => {
+    const rows = [
+      { word: "cat", srs: '{"s":1}' },
+      { word: "dog", srs: "[1,2]" },
+      { word: "ox", srs: "7" },
+    ];
+    const table: MarkdownTable = { headers: ["word", "srs"], rows: [...rows] };
+    expect(needsNormalize(table)).toBe(false);
+    expect(table.rows.filter(hasInvalidSrs)).toHaveLength(3);
+    normalizeWords(table);
+    expect(table.rows).toEqual(rows);
   });
 
-  it("clears an srs whose due date does not parse", () => {
-    const table: MarkdownTable = {
-      headers: ["word", "srs"],
-      rows: [{ word: "cat", srs: '{"s":0,"r":0,"l":0,"S":1,"D":5,"e":0,"c":0,"d":"tomorrow"}' }],
-    };
-    expect(normalizeWords(table).clearedSrs).toBe(1);
+  it("counts an srs whose due date does not parse as unreadable", () => {
+    const row = { word: "cat", srs: '{"s":0,"r":0,"l":0,"S":1,"D":5,"e":0,"c":0,"d":"tomorrow"}' };
+    expect(hasInvalidSrs(row)).toBe(true);
   });
 
-  it("does not invent a due column when the table has none", () => {
+  it("leaves a junk srs in place rather than blanking it", () => {
     const table: MarkdownTable = { headers: ["word", "srs"], rows: [{ word: "cat", srs: "junk" }] };
     normalizeWords(table);
+    expect(table.rows).toEqual([{ word: "cat", srs: "junk" }]);
+  });
+
+  it("drops a nameless column that holds nothing, headers and row keys alike", () => {
+    // Adding an empty column with no name used to be an endless cleanup: its blank
+    // cells were "filled" with the column's own name, which is the empty string, so
+    // the fill never took and the notice returned on every open.
+    const table: MarkdownTable = {
+      headers: ["word", "", "srs"],
+      rows: [{ word: "cat", "": "", srs: "" }],
+    };
+    expect(needsNormalize(table)).toBe(true);
+    expect(normalizeWords(table)).toEqual({
+      removedRows: 0,
+      filledCells: 0,
+      removedColumns: 1,
+    });
+    expect(table.headers).toEqual(["word", "srs"]);
     expect(table.rows).toEqual([{ word: "cat", srs: "" }]);
+  });
+
+  it("drops every nameless empty column, not just the first", () => {
+    // The parser numbers a second blank header so the row can be keyed by it; that
+    // invented name used to read as a real one, so the column survived the cleanup
+    // and was then force-filled with the digit it had been numbered with.
+    const table = parseTable("| word |  |  | srs |\n| - | - | - | - |\n| a |  |  | b |");
+    expect(table).not.toBeNull();
+    if (!table) return;
+    expect(normalizeWords(table)).toEqual({
+      removedRows: 0,
+      filledCells: 0,
+      removedColumns: 2,
+    });
+    expect(table.headers).toEqual(["word", "srs"]);
+    expect(table.rows).toEqual([{ word: "a", srs: "b" }]);
+  });
+
+  it("settles in one pass when dropping a row empties a nameless column", () => {
+    // The column was judged against the rows before the empty ones were dropped, so
+    // one edit cost two cleanups, two notices and two writes.
+    const table = parseTable("| word |  |\n| - | - |\n| a |  |\n|  | orphan |");
+    expect(table).not.toBeNull();
+    if (!table) return;
+    expect(normalizeWords(table)).toEqual({
+      removedRows: 1,
+      filledCells: 0,
+      removedColumns: 1,
+    });
+    expect(needsNormalize(table)).toBe(false);
+    expect(table.headers).toEqual(["word"]);
+  });
+
+  it("leaves the file's header row blank where it was blank", () => {
+    // The numbering exists to key the row, and stops there: a `2` must never appear
+    // in the user's header row.
+    const table = parseTable("| word |  |  |\n| - | - | - |\n| a | x | y |");
+    expect(table).not.toBeNull();
+    if (!table) return;
+    expect(serializeTable(table).split("\n")[0]).toBe("| word |     |     |");
+  });
+
+  it("keeps a nameless column that holds something", () => {
+    // Unnamed or not, the text in it is the user's; only the header is missing.
+    const table: MarkdownTable = {
+      headers: ["word", ""],
+      rows: [{ word: "cat", "": "note" }],
+    };
+    expect(needsNormalize(table)).toBe(false);
+    expect(normalizeWords(table)).toEqual({
+      removedRows: 0,
+      filledCells: 0,
+      removedColumns: 0,
+    });
+    expect(table.headers).toEqual(["word", ""]);
+    expect(table.rows).toEqual([{ word: "cat", "": "note" }]);
   });
 
   it("leaves a second pass with nothing to do", () => {

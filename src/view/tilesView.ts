@@ -1,17 +1,12 @@
-import { ItemView, Keymap, setIcon, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
+import { ItemView, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import type ObsictionaryPlugin from "../main";
 import type { IconicIcon } from "../model/iconic";
 import { forgetIconicIcons, readIconicIcons } from "../obsidian/iconic";
+import { renderDictionaryTiles, type TileInfo } from "../render/dictionaryTile";
 import { quickReview } from "../ui/prompts";
-import { collectRows, NO_DICTIONARIES, REDRAW_DELAY, type DictionaryRow } from "./dictionaryList";
+import { collectRows, NO_DICTIONARIES, REDRAW_DELAY } from "./dictionaryList";
 
 export const TILES_VIEW_TYPE = "obsictionary-tiles";
-
-/** One dictionary as the tiles view knows it. */
-interface Tile extends DictionaryRow {
-  /** Its Iconic icon, when it has one. Having one is what earns a picture tile. */
-  icon: IconicIcon | null;
-}
 
 /**
  * Dictionaries only, as tiles.
@@ -125,71 +120,18 @@ export class DictionaryTilesView extends ItemView {
 
     const rows = await collectRows(this.app, files, new Date());
     if (!current()) return;
-    const tiles: Tile[] = rows.map((row) => ({ ...row, icon: icons.get(row.file.path) ?? null }));
+    const tiles: TileInfo[] = rows.map((row) => ({
+      ...row,
+      icon: icons.get(row.file.path) ?? null,
+    }));
     this.shown = new Set(tiles.map((tile) => tile.file.path));
 
-    const withIcon = tiles.filter((tile) => tile.icon !== null);
-    const withoutIcon = tiles.filter((tile) => tile.icon === null);
-
-    if (withIcon.length > 0) {
-      const grid = root.createDiv({ cls: "obsictionary-tiles" });
-      for (const tile of withIcon) this.renderTile(grid, tile);
-    }
-    if (withoutIcon.length > 0) {
-      const list = root.createDiv({ cls: "obsictionary-tile-list" });
-      for (const tile of withoutIcon) this.renderTile(list, tile, true);
-    }
-  }
-
-  /**
-   * A tile. The same markup either way — a grid cell and a list row differ only in
-   * how their container lays them out, so the click targets, the badge and the
-   * review button stay identical between the two halves of the shelf.
-   */
-  private renderTile(container: HTMLElement, tile: Tile, flat = false): void {
-    const el = container.createEl("a", {
-      cls: `obsictionary-tile${flat ? " is-flat" : ""}${tile.muted ? " is-muted" : ""}`,
-      href: "#",
-    });
-    // An href makes the tile keyboard-reachable; navigation is ours, so the
-    // default is always prevented.
-    el.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      void this.app.workspace.getLeaf(Keymap.isModEvent(evt)).openFile(tile.file);
-    });
-
-    const icon = tile.icon;
-    if (icon) {
-      const iconEl = el.createDiv({ cls: "obsictionary-tile-icon" });
-      if (icon.color !== null) iconEl.style.color = icon.color;
-      if (icon.lucide !== null) setIcon(iconEl, icon.lucide);
-      else iconEl.setText(icon.emoji ?? "");
-    }
-
-    const body = el.createDiv({ cls: "obsictionary-tile-body" });
-    body.createDiv({ cls: "obsictionary-tile-name", text: tile.file.basename });
-    const meta = body.createDiv({ cls: "obsictionary-tile-meta" });
-    // Due first: it is the only number that asks anything of the reader.
-    if (tile.stats.due > 0) {
-      meta.createSpan({
-        cls: "obsictionary-tile-due",
-        text: `${tile.stats.due.toString()} due`,
-      });
-    }
-    meta.createSpan({ text: `${tile.stats.total.toString()} words` });
-    if (tile.muted) meta.createSpan({ cls: "obsictionary-tile-badge", text: "muted" });
-
-    const review = el.createEl("button", {
-      cls: "obsictionary-tile-review",
-      attr: { "aria-label": `Quick review of ${tile.file.basename}` },
-    });
-    setIcon(review, "play");
-    review.addEventListener("click", (evt) => {
-      // The tile itself is a link; without this the review click would open the
-      // note behind the session.
-      evt.preventDefault();
-      evt.stopPropagation();
-      void quickReview(this.app, [tile.file], this.plugin.reviewPrefs());
-    });
+    renderDictionaryTiles(this.app, root, tiles, (tile) => ({
+      icon: "play",
+      label: `Quick review of ${tile.file.basename}`,
+      run: () => {
+        void quickReview(this.app, [tile.file], this.plugin.reviewPrefs());
+      },
+    }));
   }
 }
