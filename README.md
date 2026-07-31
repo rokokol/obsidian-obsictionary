@@ -178,7 +178,7 @@ The build copies `main.js`, `manifest.json` and `styles.css` into the folder nam
 
 ## Roadmap
 
-- [ ] Notify-reminders
+- [x] Notify-reminders
 - [ ] Inline hints in other files
 - [ ] Translate the plugin to multiple languages
 
