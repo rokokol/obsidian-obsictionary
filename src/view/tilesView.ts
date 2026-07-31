@@ -1,7 +1,6 @@
 import { ItemView, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import type ObsictionaryPlugin from "../main";
-import type { IconicIcon } from "../model/iconic";
-import { forgetIconicIcons, readIconicIcons } from "../obsidian/iconic";
+import { addIconicReloadAction } from "../obsidian/iconic";
 import { renderDictionaryTiles, type TileInfo } from "../render/dictionaryTile";
 import { quickReview } from "../ui/prompts";
 import { collectRows, NO_DICTIONARIES, REDRAW_DELAY } from "./dictionaryList";
@@ -48,12 +47,8 @@ export class DictionaryTilesView extends ItemView {
   override onOpen(): Promise<void> {
     // Nothing tells us when an icon changes: Iconic's data lives under the config
     // folder, which raises no vault events. So offer the reload explicitly.
-    this.reloadAction = this.addAction("refresh-cw", "Reload icons", () => {
-      // Drop the mtime cache first: it is the thing being worked around here, and
-      // a write that lands in the same millisecond as the last read would leave the
-      // button doing nothing at all.
-      forgetIconicIcons();
-      this.queueRedraw();
+    this.reloadAction = addIconicReloadAction(this, () => {
+      this.plugin.refreshIconic();
     });
     const onEdit = (file: TAbstractFile): void => {
       if (this.plugin.cache.has(file.path) || this.shown.has(file.path)) this.queueRedraw();
@@ -114,8 +109,8 @@ export class DictionaryTilesView extends ItemView {
     }
 
     // With the integration off, nothing has an icon, so every dictionary falls
-    // through to the text list — and Iconic's data file is never touched.
-    const icons = useIconic ? await readIconicIcons(this.app) : new Map<string, IconicIcon>();
+    // through to the text list.
+    const icons = await this.plugin.iconicIcons();
     if (!current()) return;
 
     const rows = await collectRows(this.app, files, new Date());

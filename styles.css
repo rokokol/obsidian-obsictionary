@@ -682,6 +682,23 @@ body.obsictionary-hide-status .status-bar {
   color: var(--text-faint);
 }
 
+/* The Iconic icon before a dictionary's name. Fixed width, so an emoji and a
+   Lucide glyph leave the names starting at the same place. */
+.obsictionary-dashboard-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2em;
+  margin-right: var(--size-4-2);
+  vertical-align: -0.15em;
+  line-height: 1;
+}
+
+.obsictionary-dashboard-icon .svg-icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
 .obsictionary-dashboard-link {
   cursor: pointer;
 }

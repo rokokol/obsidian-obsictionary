@@ -4,6 +4,9 @@
  * Shared by the shelf and the stats block so a dictionary looks the same wherever
  * it is offered. Both need the icon, the counts, the muted badge and the click
  * target; the only difference is the corner action, which the shelf supplies.
+ *
+ * Drawing the icon itself lives here too, since the tile is where a dictionary's
+ * chrome is decided. The dashboard's table borrows it for the icon beside a name.
  */
 
 import { Keymap, setIcon, type App, type TFile } from "obsidian";
@@ -27,12 +30,18 @@ export interface TileOptions {
   action?: { icon: string; label: string; run: () => void };
 }
 
-/** Draw the icon, if there is one to draw. */
-function renderIcon(el: HTMLElement, icon: IconicIcon): void {
-  const iconEl = el.createDiv({ cls: "obsictionary-tile-icon" });
-  if (icon.color !== null) iconEl.style.color = icon.color;
-  if (icon.lucide !== null) setIcon(iconEl, icon.lucide);
-  else iconEl.setText(icon.emoji ?? "");
+/**
+ * Fill `el` with an Iconic icon, in its colour: a registered icon by name, or the
+ * literal glyph when Iconic stored an emoji.
+ *
+ * The element is the caller's, since only the caller knows how big the icon should
+ * be and what it sits inside — a tile draws it large, a dashboard row at text
+ * height. Everything else about an icon is the same wherever it turns up.
+ */
+export function renderIconicIcon(el: HTMLElement, icon: IconicIcon): void {
+  if (icon.color !== null) el.style.color = icon.color;
+  if (icon.lucide !== null) setIcon(el, icon.lucide);
+  else el.setText(icon.emoji ?? "");
 }
 
 /**
@@ -57,7 +66,7 @@ export function renderDictionaryTile(
     void app.workspace.getLeaf(Keymap.isModEvent(evt)).openFile(info.file);
   });
 
-  if (info.icon) renderIcon(el, info.icon);
+  if (info.icon) renderIconicIcon(el.createDiv({ cls: "obsictionary-tile-icon" }), info.icon);
 
   const body = el.createDiv({ cls: "obsictionary-tile-body" });
   body.createDiv({ cls: "obsictionary-tile-name", text: info.file.basename });

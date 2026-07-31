@@ -78,14 +78,14 @@ export function parseIconicEntry(value: unknown): IconicIcon | null {
   const icon = raw.trim();
   if (icon === "") return null;
   const color = iconicColor(value["color"]);
-  // A bare `lucide-` leaves no name behind, and `setIcon("")` draws nothing at
-  // all — which would put a blank square in the icon grid instead of letting the
-  // dictionary fall through to the text list where it belongs.
+  // A prefixed name that is not an icon id names nothing `setIcon` can find — a
+  // bare `lucide-` least of all — and `setIcon` draws nothing at all for those,
+  // which would put a blank square in the icon grid instead of letting the
+  // dictionary fall through to the text list where it belongs. Prefixed, it is
+  // also not an emoji: printing `lucide-` as a glyph is no better than a blank.
   if (icon.startsWith(LUCIDE_PREFIX)) {
     const name = icon.slice(LUCIDE_PREFIX.length);
-    return name === ""
-      ? { lucide: null, emoji: icon, color }
-      : { lucide: name, emoji: null, color };
+    return ICON_ID_RE.test(name) ? { lucide: name, emoji: null, color } : null;
   }
   return ICON_ID_RE.test(icon)
     ? { lucide: icon, emoji: null, color }

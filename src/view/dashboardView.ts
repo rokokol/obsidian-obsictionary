@@ -1,6 +1,9 @@
 import { ItemView, Keymap, setIcon, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import type ObsictionaryPlugin from "../main";
 import { countedDictionaries } from "../model/dictionaryConfig";
+import type { IconicIcon } from "../model/iconic";
+import { addIconicReloadAction } from "../obsidian/iconic";
+import { renderIconicIcon } from "../render/dictionaryTile";
 import { renderStatsGrid, type Stats } from "../render/statsView";
 import { quickReview, reviewSlice } from "../ui/prompts";
 import { collectRows, NO_DICTIONARIES, REDRAW_DELAY, type DictionaryRow } from "./dictionaryList";
@@ -30,6 +33,8 @@ export class DashboardView extends ItemView {
   private generation = 0;
   /** Paths currently on screen, so an edit that unmakes a dictionary redraws. */
   private shown = new Set<string>();
+  /** The "Reload icons" button, hidden while the integration is off. */
+  private reloadAction: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsictionaryPlugin) {
     super(leaf);
@@ -50,6 +55,11 @@ export class DashboardView extends ItemView {
   }
 
   override onOpen(): Promise<void> {
+    // Nothing tells us when an icon changes: Iconic's data lives under the config
+    // folder, which raises no vault events. So offer the reload explicitly.
+    this.reloadAction = addIconicReloadAction(this, () => {
+      this.plugin.refreshIconic();
+    });
     // Numbers here are derived from the notes, so anything that edits a
     // dictionary invalidates them. Coalesce: a review session writes per card.
     // Edits are filtered to dictionaries — with the dashboard docked, typing in
@@ -77,6 +87,9 @@ export class DashboardView extends ItemView {
     this.redrawTimer = null;
     // Any pass still in flight sees a new generation and stops.
     this.generation += 1;
+    // Obsidian removes the header button itself; dropping the handle keeps a late
+    // render from styling a detached element.
+    this.reloadAction = null;
     this.contentEl.empty();
     return Promise.resolve();
   }
@@ -99,6 +112,11 @@ export class DashboardView extends ItemView {
     const generation = this.generation;
     const current = (): boolean => this.generation === generation;
 
+    const useIconic = this.plugin.settings.iconicIntegration;
+    // The action exists for a change no vault event reports; with the integration
+    // off there is no such change, and offering to reload nothing would be a lie.
+    this.reloadAction?.toggle(useIconic);
+
     const root = this.contentEl;
     root.empty();
     root.addClass("obsictionary-dashboard");
@@ -109,6 +127,10 @@ export class DashboardView extends ItemView {
       root.createDiv({ cls: "obsictionary-view-empty", text: NO_DICTIONARIES });
       return;
     }
+
+    // With the integration off, no row has an icon.
+    const icons = await this.plugin.iconicIcons();
+    if (!current()) return;
 
     const rows = await collectRows(this.app, files, new Date());
     if (!current()) return;
@@ -133,10 +155,18 @@ export class DashboardView extends ItemView {
       void reviewSlice(this.app, countedFiles, this.plugin.reviewPrefs(), { pool: "due" });
     });
 
-    this.renderTable(root, rows);
+    this.renderTable(root, rows, icons);
   }
 
-  private renderTable(root: HTMLElement, rows: DictionaryRow[]): void {
+  private renderTable(
+    root: HTMLElement,
+    rows: DictionaryRow[],
+    icons: Map<string, IconicIcon>,
+  ): void {
+    // Once one row is indented by an icon, every row is: names that start at two
+    // different places read as two different columns. Nothing is reserved when no
+    // dictionary has an icon, so a vault without them keeps the tighter table.
+    const anyIcon = rows.some((row) => icons.has(row.file.path));
     const table = root.createEl("table", { cls: "obsictionary-dashboard-table" });
     const head = table.createEl("thead").createEl("tr");
     for (const label of ["Dictionary", "Total", "Due", "New", "Learning", "Review", ""]) {
@@ -149,6 +179,16 @@ export class DashboardView extends ItemView {
       if (row.muted) tr.addClass("is-muted");
 
       const nameCell = tr.createEl("td");
+      if (anyIcon) {
+        // Aria-hidden: the icon says nothing the name beside it does not, and a
+        // Lucide id read aloud before every dictionary would be noise.
+        const iconEl = nameCell.createSpan({
+          cls: "obsictionary-dashboard-icon",
+          attr: { "aria-hidden": "true" },
+        });
+        const icon = icons.get(row.file.path);
+        if (icon) renderIconicIcon(iconEl, icon);
+      }
       // An href makes the link keyboard-reachable; navigation is ours, so the
       // default is always prevented.
       const link = nameCell.createEl("a", {

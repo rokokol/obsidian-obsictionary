@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import type { App, ItemView } from "obsidian";
 import { parseIconicData, type IconicIcon } from "../model/iconic";
 
 /**
@@ -39,8 +39,8 @@ export async function iconicInstalled(app: App): Promise<boolean> {
  * the plugin switched off, which is the friendlier failure.
  *
  * Note that files under the config folder raise no vault events, so nothing tells
- * us when the user sets an icon. Callers redraw on their own schedule; the tiles
- * view offers a refresh action for exactly this.
+ * us when the user sets an icon. Callers redraw on their own schedule; the views
+ * that draw icons offer `addIconicReloadAction` for exactly this.
  */
 export async function readIconicIcons(app: App): Promise<Map<string, IconicIcon>> {
   const path = iconicPath(app, "data.json");
@@ -63,4 +63,21 @@ export async function readIconicIcons(app: App): Promise<Map<string, IconicIcon>
 /** Drop the cache — on plugin unload, so a reload does not inherit it. */
 export function forgetIconicIcons(): void {
   cached = null;
+}
+
+/**
+ * Give a view a "Reload icons" header button, and hand back the handle so it can
+ * be hidden while the integration is off.
+ *
+ * The cache is dropped before the repaint: it is the thing being worked around
+ * here, and a write landing in the same millisecond as the last read would leave
+ * the button doing nothing at all. `refresh` repaints every view that draws icons,
+ * not just the one clicked — the cache they read is shared, so an icon that went
+ * stale went stale in all of them at once.
+ */
+export function addIconicReloadAction(view: ItemView, refresh: () => void): HTMLElement {
+  return view.addAction("refresh-cw", "Reload icons", () => {
+    forgetIconicIcons();
+    refresh();
+  });
 }

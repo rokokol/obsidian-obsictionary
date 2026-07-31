@@ -891,14 +891,22 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   /**
+   * The icons to draw dictionaries with: Iconic's, or none at all when the
+   * integration is off — in which case its data file is never touched.
+   */
+  iconicIcons(): Promise<Map<string, IconicIcon>> {
+    return this.settings.iconicIntegration
+      ? readIconicIcons(this.app)
+      : Promise.resolve(new Map<string, IconicIcon>());
+  }
+
+  /**
    * Draw a stats block. The Iconic icons are fetched here rather than inside the
    * renderer: the renderer is also the dashboard's, and only the block wants a tile
    * per dictionary with the icon the shelf would show.
    */
   private async renderStatsBlock(block: StatsBlockFiles, el: HTMLElement): Promise<void> {
-    const icons = this.settings.iconicIntegration
-      ? await readIconicIcons(this.app)
-      : new Map<string, IconicIcon>();
+    const icons = await this.iconicIcons();
     await renderStats(this.app, block.files, el, this.statActions(block.files), {
       icons,
       muted: (file) => dictionaryConfig(this.app, file).mute,
@@ -978,13 +986,16 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   /**
-   * Repaint the tiles view. Separate from `refreshRendered` because only the
-   * Iconic switch changes what it draws, and nothing else on screen cares about
-   * that one.
+   * Repaint the two views that draw Iconic icons — the shelf and the dashboard.
+   * Separate from `refreshRendered` because only the Iconic switch changes what
+   * they draw, and nothing else on screen cares about that one.
    */
-  refreshTiles(): void {
+  refreshIconic(): void {
     this.app.workspace.getLeavesOfType(TILES_VIEW_TYPE).forEach((leaf) => {
       if (leaf.view instanceof DictionaryTilesView) leaf.view.redraw();
+    });
+    this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof DashboardView) leaf.view.redraw();
     });
   }
 

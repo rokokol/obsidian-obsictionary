@@ -168,9 +168,9 @@ export class ObsictionarySettingTab extends PluginSettingTab {
     const setting = new Setting(containerEl)
       .setName("Icons from Iconic")
       .setDesc(
-        "In the dictionary tiles view, give every dictionary you have set an Iconic " +
-          "icon for a picture tile, and list the rest below it. Off means one plain " +
-          "list.",
+        "Show the icons you set in Iconic: beside every name in the dashboard, and " +
+          "as a picture tile in the dictionary tiles view, where dictionaries without " +
+          "one fall into a plain list below. Off means no icons and one plain list.",
       );
 
     // Built now, shown only once the plugin is known to be missing — the check is
@@ -187,7 +187,7 @@ export class ObsictionarySettingTab extends PluginSettingTab {
       toggle.onChange((value) => {
         this.plugin.settings.iconicIntegration = value;
         void this.plugin.saveSettings();
-        this.plugin.refreshTiles();
+        this.plugin.refreshIconic();
       });
       void this.resolveIconic(toggle, hint);
     });

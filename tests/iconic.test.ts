@@ -64,12 +64,13 @@ describe("parseIconicEntry", () => {
 
   it("does not read a bare `lucide-` as a Lucide icon, since no name is left", () => {
     // `setIcon("")` draws nothing, which would put a blank square in the icon grid
-    // instead of letting the dictionary fall through to the text list.
-    expect(parseIconicEntry({ icon: "lucide-" })).toEqual({
-      lucide: null,
-      emoji: "lucide-",
-      color: null,
-    });
+    // instead of letting the dictionary fall through to the text list — and the
+    // prefix itself is not an emoji to print in its place.
+    expect(parseIconicEntry({ icon: "lucide-" })).toBeNull();
+  });
+
+  it("does not read a prefixed name that is not an icon id, which draws nothing", () => {
+    expect(parseIconicEntry({ icon: "lucide-Book A" })).toBeNull();
   });
 });
 
