@@ -23,7 +23,7 @@ export class DictionaryTilesView extends ItemView {
   private generation = 0;
   /** Paths on screen, so an edit that unmakes a dictionary still redraws. */
   private shown = new Set<string>();
-  /** The "Reload icons" button, hidden while there are no icons to reload. */
+  /** The "Reload icons" button, hidden while the integration is off. */
   private reloadAction: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsictionaryPlugin) {
@@ -47,9 +47,7 @@ export class DictionaryTilesView extends ItemView {
   override onOpen(): Promise<void> {
     // Nothing tells us when an icon changes: Iconic's data lives under the config
     // folder, which raises no vault events. So offer the reload explicitly.
-    this.reloadAction = addIconicReloadAction(this, () => {
-      this.plugin.refreshIconic();
-    });
+    this.reloadAction = addIconicReloadAction(this, this.plugin);
     const onEdit = (file: TAbstractFile): void => {
       if (this.plugin.cache.has(file.path) || this.shown.has(file.path)) this.queueRedraw();
     };
@@ -74,7 +72,8 @@ export class DictionaryTilesView extends ItemView {
     return Promise.resolve();
   }
 
-  /** Repaint on demand — the Iconic integration was toggled in settings. */
+  /** Repaint on demand — a settings toggle or a Reload icons click, from either
+   * view that draws icons, rather than a vault event. */
   redraw(): void {
     this.queueRedraw();
   }

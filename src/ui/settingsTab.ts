@@ -155,7 +155,8 @@ export class ObsictionarySettingTab extends PluginSettingTab {
   /**
    * The Iconic integration, drawn whether or not Iconic is installed: someone who
    * has never heard of the plugin should still be able to learn from this tab that
-   * the shelf can show icons. Without it the toggle is disabled rather than hidden,
+   * the dashboard and the shelf can show icons. Without it the toggle is disabled
+   * rather than hidden,
    * because switching it on would change nothing.
    *
    * Only the disk can answer whether Iconic is there, so the row starts disabled

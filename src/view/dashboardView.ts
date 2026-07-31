@@ -57,9 +57,7 @@ export class DashboardView extends ItemView {
   override onOpen(): Promise<void> {
     // Nothing tells us when an icon changes: Iconic's data lives under the config
     // folder, which raises no vault events. So offer the reload explicitly.
-    this.reloadAction = addIconicReloadAction(this, () => {
-      this.plugin.refreshIconic();
-    });
+    this.reloadAction = addIconicReloadAction(this, this.plugin);
     // Numbers here are derived from the notes, so anything that edits a
     // dictionary invalidates them. Coalesce: a review session writes per card.
     // Edits are filtered to dictionaries — with the dashboard docked, typing in
@@ -94,7 +92,8 @@ export class DashboardView extends ItemView {
     return Promise.resolve();
   }
 
-  /** Repaint on demand — a settings change, not a vault event. */
+  /** Repaint on demand — a settings change or a Reload icons click, from either
+   * view that draws icons, rather than a vault event. */
   redraw(): void {
     this.queueRedraw();
   }
