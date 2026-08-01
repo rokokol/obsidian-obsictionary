@@ -4,13 +4,11 @@
  * Shared by the shelf and the stats block so a dictionary looks the same wherever
  * it is offered. Both need the icon, the counts, the muted badge and the click
  * target; the only difference is the corner action, which the shelf supplies.
- *
- * Drawing the icon itself lives here too, since the tile is where a dictionary's
- * chrome is decided. The dashboard's table borrows it for the icon beside a name.
  */
 
 import { Keymap, setIcon, type App, type TFile } from "obsidian";
 import type { IconicIcon } from "../model/iconic";
+import { renderIconicIcon } from "./iconicIcon";
 import type { Stats } from "./statsView";
 
 /** One dictionary, as a tile needs to know it. */
@@ -28,20 +26,6 @@ export interface TileOptions {
   flat?: boolean;
   /** A corner button: its icon, its label, and what it does. */
   action?: { icon: string; label: string; run: () => void };
-}
-
-/**
- * Fill `el` with an Iconic icon, in its colour: a registered icon by name, or the
- * literal glyph when Iconic stored an emoji.
- *
- * The element is the caller's, since only the caller knows how big the icon should
- * be and what it sits inside — a tile draws it large, a dashboard row at text
- * height. Everything else about an icon is the same wherever it turns up.
- */
-export function renderIconicIcon(el: HTMLElement, icon: IconicIcon): void {
-  if (icon.color !== null) el.style.color = icon.color;
-  if (icon.lucide !== null) setIcon(el, icon.lucide);
-  else el.setText(icon.emoji ?? "");
 }
 
 /**

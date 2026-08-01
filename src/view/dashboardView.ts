@@ -3,7 +3,7 @@ import type ObsictionaryPlugin from "../main";
 import { countedDictionaries } from "../model/dictionaryConfig";
 import type { IconicIcon } from "../model/iconic";
 import { addIconicReloadAction } from "../obsidian/iconic";
-import { renderIconicIcon } from "../render/dictionaryTile";
+import { renderIconicIcon } from "../render/iconicIcon";
 import { renderStatsGrid, type Stats } from "../render/statsView";
 import { quickReview, reviewSlice } from "../ui/prompts";
 import { collectRows, NO_DICTIONARIES, REDRAW_DELAY, type DictionaryRow } from "./dictionaryList";
