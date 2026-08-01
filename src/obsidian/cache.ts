@@ -7,16 +7,27 @@ import { isDictionaryFile } from "./dictionaryFile";
  * "highlight dictionary words in other notes" feature.
  */
 export class DictionaryCache {
-  private readonly paths = new Set<string>();
+  private paths = new Set<string>();
 
   constructor(private readonly app: App) {}
 
-  /** Full rescan of the vault. */
-  rebuild(): void {
-    this.paths.clear();
+  /**
+   * Full rescan of the vault. Reports whether the answer changed, so a caller that
+   * rescans speculatively — on load, where the metadata cache may not have caught
+   * up yet — can repaint only when there is something new to show.
+   */
+  rebuild(): boolean {
+    const before = this.paths;
+    const found = new Set<string>();
     for (const file of this.app.vault.getMarkdownFiles()) {
-      if (isDictionaryFile(this.app, file)) this.paths.add(file.path);
+      if (isDictionaryFile(this.app, file)) found.add(file.path);
     }
+    this.paths = found;
+    if (found.size !== before.size) return true;
+    for (const path of found) {
+      if (!before.has(path)) return true;
+    }
+    return false;
   }
 
   /** Re-evaluate a single file after a metadata/content change. */

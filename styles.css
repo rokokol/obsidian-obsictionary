@@ -270,6 +270,12 @@
   font-size: var(--font-ui-small);
 }
 
+/* An empty block is an ordinary state and stays quiet; a block that could not be
+   read is not, and at --text-faint it would read as the same shrug. */
+.obsictionary-stats-empty.is-error {
+  color: var(--text-error);
+}
+
 /* A tile is a button only when it starts something. */
 .obsictionary-stat.is-clickable {
   box-shadow: none;

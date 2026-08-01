@@ -1,4 +1,6 @@
 import {
+  type MarkdownPostProcessorContext,
+  MarkdownRenderChild,
   MarkdownView,
   Notice,
   Plugin,
@@ -86,6 +88,14 @@ export default class ObsictionaryPlugin extends Plugin {
   private startupReminderPending = false;
   /** Whether the due cache is being maintained (mirrors `remindersEnabled`). */
   private tracking = false;
+  /**
+   * Whether the metadata cache has said it read everything. Only the first
+   * `resolved` is worth forcing a pass for; before it, an index that found no
+   * dictionaries means nothing, and after it, it means the vault has none.
+   */
+  private settled = false;
+  /** How to redraw each `obsictionary-stats` block and dictionary embed on screen. */
+  private readonly statsBlocks = new Set<() => void>();
 
   override async onload(): Promise<void> {
     await this.loadSettings();
@@ -113,15 +123,33 @@ export default class ObsictionaryPlugin extends Plugin {
     this.interceptOpens();
 
     this.app.workspace.onLayoutReady(() => {
-      this.cache.rebuild();
-      this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
-        this.maybeSwap(leaf);
-      });
+      // Unconditional: this runs once, and it is the first moment there are panes
+      // to sweep at all. An earlier pass may have read a perfectly good index into
+      // a workspace that did not exist yet.
+      this.indexVault(true);
       this.updateChrome();
       this.startupReminderPending = this.settings.remindersEnabled && this.settings.remindOnStartup;
       this.applyTracking();
       this.offerMigration();
     });
+    // `onLayoutReady` says the panes are up, not that the notes have been read:
+    // on a cold start Obsidian indexes frontmatter after it draws the workspace,
+    // so detection there sees no `obsictionary` property anywhere and the index
+    // comes back empty — the dashboard says there are no dictionaries and a
+    // restored dictionary tab stays plain markdown until the user reopens it.
+    // `resolved` is the cache announcing it has read everything, so index again,
+    // and force that first one through: it is the pass whose answer can finally be
+    // believed. Registered out here rather than inside the wait above, because it
+    // can land before the layout is ready — and a handler registered from within
+    // that callback would miss it, leaving the next `resolved` to wait on the user
+    // editing a file.
+    this.registerEvent(
+      this.app.metadataCache.on("resolved", () => {
+        const first = !this.settled;
+        this.settled = true;
+        this.indexVault(first);
+      }),
+    );
 
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
@@ -156,7 +184,7 @@ export default class ObsictionaryPlugin extends Plugin {
     });
 
     this.registerMarkdownCodeBlockProcessor("obsictionary-stats", (source, el, ctx) => {
-      void this.renderStatsBlock(this.statsFiles(source, ctx.sourcePath), el);
+      this.liveStats(ctx, el, () => this.statsFiles(source, ctx.sourcePath));
     });
 
     // An embed of a dictionary shows its stats instead of transcluding every word.
@@ -165,8 +193,12 @@ export default class ObsictionaryPlugin extends Plugin {
         el,
         (target) => this.embeddedDictionary(target, ctx.sourcePath) !== null,
         (target, container) => {
-          const file = this.embeddedDictionary(target, ctx.sourcePath);
-          if (file) void this.renderStatsBlock({ files: [file], missing: [] }, container);
+          this.liveStats(ctx, container, () => {
+            const file = this.embeddedDictionary(target, ctx.sourcePath);
+            // The target resolved when the embed was drawn; if a redraw cannot find
+            // it, it has been deleted or renamed, and saying so beats a stale card.
+            return file ? { files: [file], missing: [] } : { files: [], missing: [target] };
+          });
         },
       );
     });
@@ -742,6 +774,57 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   /**
+   * Find every dictionary in the vault and let the rest of the plugin catch up.
+   *
+   * Run at load and again when the metadata cache reports it has resolved, because
+   * the load pass can legitimately find nothing: detection reads frontmatter, and
+   * on a cold start there is none to read yet.
+   *
+   * Two passes are `force`d, because the work needs two things that arrive
+   * independently — an index worth believing, and a workspace to show it in. The
+   * first `resolved` brings the first; `onLayoutReady` brings the second, and it
+   * cannot be skipped just because the index has stopped moving: a `resolved` that
+   * landed before the panes existed swept a workspace of no leaves.
+   *
+   * Neither pass may lean on the rescan reporting a change, because "nothing
+   * changed" is not evidence of anything here. The per-file `changed` handler
+   * maintains the very set the rescan diffs against, so a startup that reparsed the
+   * dictionaries has already filled it in, and the rescan finds its own work —
+   * reporting no change while every view on screen still shows the empty vault it
+   * drew at layout time.
+   *
+   * After those two, no change means no work. A `resolved` fires for each later
+   * batch of edits, and repainting views the user is working in — or re-reading
+   * every dictionary for the due count — on each one is not free. Both forced
+   * passes land within seconds of a normal start; after a mid-session enable the
+   * `resolved` one waits for whatever the user edits next, since the cache resolved
+   * long before this instance existed. That same coupling to `changed` is what
+   * makes this safe: when the user types the `obsictionary` property by hand,
+   * `changed` folds it in first, so the rescan reports nothing and this returns
+   * before the sweep — which is what keeps the swap off a cursor still sitting in
+   * the frontmatter block.
+   */
+  private indexVault(force: boolean): void {
+    const changed = this.cache.rebuild();
+    if (!force && !changed) return;
+    // A restored tab is a markdown view of a note nobody yet knew was a
+    // dictionary; now that we know, it can become one without being reopened.
+    this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
+      this.maybeSwap(leaf, false);
+    });
+    // Everything that lists dictionaries drew whatever was known at the time,
+    // which may have been nothing at all. `refreshRendered` covers the dictionary
+    // views, the dashboard and every note being read — a `vault`-scoped stats block
+    // among them — and deliberately skips the shelf, which is what the second call
+    // is for.
+    this.refreshRendered();
+    this.refreshIconic();
+    // Reminders count from a cache seeded by this list, so it was counting a
+    // vault with no dictionaries in it.
+    if (this.settings.remindersEnabled) this.dueTracker.invalidateAll();
+  }
+
+  /**
    * Swap a leaf that is *already* showing a dictionary as markdown — a restored
    * workspace at load, or a note the user has just given the `obsictionary`
    * property to. Ordinary opens never reach this: `interceptOpens` catches them
@@ -751,8 +834,21 @@ export default class ObsictionaryPlugin extends Plugin {
    * becomes a dictionary the moment the property is typed, and swapping then would
    * pull the editor out from under a cursor still inside the frontmatter block.
    * Leaving on the leaf and coming back is a clear enough signal.
+   *
+   * `indexVault` sweeps every leaf without waiting for focus, and on its ordinary
+   * diff-gated passes that cannot catch a property just typed: `changed` folds the
+   * note in first, so the rescan reports nothing moved and the sweep is never
+   * reached. Its two forced passes are the exception, and they are honestly an
+   * exception — at startup nobody is mid-frontmatter, but a plugin enabled
+   * mid-session takes its first `resolved` from whatever the user edits next, which
+   * could be that very property. Once per enable, and no worse than a view swap.
+   *
+   * `focus` is false for the sweep over every restored leaf: taking focus is right
+   * when the user just moved to the leaf being swapped, and wrong when the plugin
+   * is catching up on its own several leaves at a time, possibly seconds after the
+   * user started typing somewhere else.
    */
-  private maybeSwap(leaf: WorkspaceLeaf | null): void {
+  private maybeSwap(leaf: WorkspaceLeaf | null, focus = true): void {
     if (this.settings.defaultView !== "dictionary") return;
     if (!leaf) return;
     const view = leaf.view;
@@ -763,7 +859,7 @@ export default class ObsictionaryPlugin extends Plugin {
     void leaf.setViewState({
       type: DICTIONARY_VIEW_TYPE,
       state: { file: file.path },
-      active: true,
+      active: focus,
     });
   }
 
@@ -901,6 +997,58 @@ export default class ObsictionaryPlugin extends Plugin {
   }
 
   /**
+   * Draw a stats block, and keep it redrawable for as long as it is on screen.
+   *
+   * Which dictionaries a block covers is decided when it renders, so a block that
+   * rendered before the vault was indexed says there are none — and nothing brings
+   * it back, because a code block is only re-processed when its note is. Reading
+   * view has `rerender`, and that is what `refreshRendered` used to lean on; Live
+   * Preview has no equivalent, and `getMode` calls it `source`, so those blocks were
+   * skipped entirely and the user was left reopening the note to see their own
+   * dictionaries.
+   *
+   * So each block registers how to redraw itself and drops that when it goes away.
+   * `scope` is re-read on every redraw rather than captured, because what a scope
+   * resolves to is exactly what changes underneath these blocks.
+   */
+  private liveStats(
+    ctx: MarkdownPostProcessorContext,
+    el: HTMLElement,
+    scope: () => StatsBlockFiles,
+  ): void {
+    const redraw = (): void => {
+      this.renderStatsBlock(scope(), el).catch((err: unknown) => {
+        // Nothing has been drawn yet when a read fails — the renderer holds off
+        // touching `el` until it has every number — so without this the block
+        // keeps the figures it drew last time, which look perfectly current. Said
+        // in the block rather than a notice: a redraw covers every block at once,
+        // and one unreadable dictionary should not raise a row of popups.
+        el.empty();
+        el.createDiv({
+          cls: "obsictionary-stats-empty is-error",
+          text: `Could not read the dictionaries for this block: ${errorMessage(err)}`,
+        });
+      });
+    };
+    this.statsBlocks.add(redraw);
+    // Tied to the element: Obsidian unloads the child when the block leaves the
+    // document, which is the only reliable signal that it is gone. Without it the
+    // set would grow for the session and redraw into detached elements.
+    const child = new MarkdownRenderChild(el);
+    child.register(() => this.statsBlocks.delete(redraw));
+    ctx.addChild(child);
+    redraw();
+  }
+
+  /** Redraw every stats block on screen, in whichever mode it is being shown. */
+  private redrawStatsBlocks(): void {
+    // Copied because nothing here promises the set holds still, not because
+    // anything is known to move it: a redraw only reaches its first `await` before
+    // returning, and the re-render that registers new blocks runs after this.
+    for (const redraw of [...this.statsBlocks]) redraw();
+  }
+
+  /**
    * Draw a stats block. The Iconic icons are fetched here rather than inside the
    * renderer: the renderer is also the dashboard's, and only the block wants a tile
    * per dictionary with the icon the shelf would show.
@@ -966,9 +1114,12 @@ export default class ObsictionaryPlugin extends Plugin {
    *
    * The re-render is blunt: it hits every note being read, not just the ones with
    * a dictionary in them, and so re-runs other plugins' post-processors too. There
-   * is no cheap way to ask which notes contain a stats block, and this runs only
-   * when a setting is toggled by hand. Leaves not being read are skipped, which is
-   * most of them.
+   * is no cheap way to ask which notes contain a stats block, and what makes the
+   * bluntness affordable is how seldom this runs: twice while the vault is being
+   * indexed at load, then only on a settings toggle, a migration or a reschedule.
+   * Leaves not being read are skipped, which is most of them — and stats blocks in
+   * those leaves are covered instead by the redraw below, which is the only thing
+   * that reaches Live Preview at all.
    */
   refreshRendered(): void {
     // Not the tiles view: it reads no setting these controls change, and its own
@@ -977,6 +1128,15 @@ export default class ObsictionaryPlugin extends Plugin {
     this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE).forEach((leaf) => {
       if (leaf.view instanceof DashboardView) leaf.view.redraw();
     });
+    this.redrawStatsBlocks();
+    // A block being read is redrawn twice — once above, once by its processor
+    // running again here. The rerender is still needed for everything else a
+    // post-processor draws (the properties table, the review buttons), and the
+    // wasted half is a second read of every dictionary in the block's scope, then
+    // thrown away with the element it drew into. Paid twice per start for a block
+    // being read, and not as cheap as it sounds — the file contents are cached but
+    // the parse and the card states are not. Still worth it over a branch: nobody
+    // is waiting on the result, and it comes a file at a time.
     this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
       const view = leaf.view;
       if (view instanceof MarkdownView && view.getMode() === "preview") {
@@ -987,8 +1147,9 @@ export default class ObsictionaryPlugin extends Plugin {
 
   /**
    * Repaint the two views that draw Iconic icons — the shelf and the dashboard.
-   * Separate from `refreshRendered` because only the Iconic switch changes what
-   * they draw, and nothing else on screen cares about that one.
+   * Separate from `refreshRendered` because the Iconic switch changes what they
+   * draw and nothing else on screen cares, and because the shelf is the one thing
+   * `refreshRendered` leaves out; `indexVault` calls both for that reason.
    */
   refreshIconic(): void {
     this.app.workspace.getLeavesOfType(TILES_VIEW_TYPE).forEach((leaf) => {
@@ -1002,6 +1163,12 @@ export default class ObsictionaryPlugin extends Plugin {
   override onunload(): void {
     this.dueTracker.dispose();
     forgetIconicIcons();
+    // The blocks' own cleanup runs when Obsidian unloads them, which for a note
+    // still open never happens. This does not free the plugin — the render
+    // children hold their own references until their notes are redrawn — but it
+    // guarantees a disabled instance repaints nothing, and drops the set's hold on
+    // elements that outlive it.
+    this.statsBlocks.clear();
     this.statusBarObserver?.disconnect();
     this.statusBarObserver = null;
     // Obsidian removes the item itself; dropping the handle keeps a late

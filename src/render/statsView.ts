@@ -113,6 +113,14 @@ export interface StatsBlockContext {
  * usually the only thing in the note pointing at the dictionary, so it may as well
  * be the way in — and with an Iconic icon it is the same tile the shelf shows,
  * which makes a dictionary recognisable in both places.
+ *
+ * Counting happens first and drawing second, with no `await` between clearing `el`
+ * and filling it. Two renders can share an element — a block redrawn while its
+ * first pass is still reading dictionaries off disk — and clearing up front would
+ * put both `empty()` calls before either set of tiles: each would wipe an element
+ * neither had written to yet, and both would then append, leaving the block with
+ * two of everything. Drawing in one synchronous run instead means the later render
+ * simply replaces the earlier one, whichever order they finish in.
  */
 export async function renderStats(
   app: App,
@@ -121,16 +129,7 @@ export async function renderStats(
   actions: StatActions = {},
   context?: StatsBlockContext,
 ): Promise<void> {
-  el.empty();
-  for (const scope of context?.missing ?? []) {
-    el.createDiv({ cls: "obsictionary-stats-empty", text: `No dictionary found for "${scope}".` });
-  }
-  if (files.length === 0) {
-    if ((context?.missing ?? []).length === 0) {
-      el.createDiv({ cls: "obsictionary-stats-empty", text: "No dictionary found for stats." });
-    }
-    return;
-  }
+  const missing = context?.missing ?? [];
   const now = new Date();
   // Keyed by path, and the tiles are drawn from the same map: a caller that passed
   // the same dictionary twice gets one tile, not two tiles over one set of numbers.
@@ -138,6 +137,16 @@ export async function renderStats(
   for (const file of files) {
     if (perFile.has(file.path)) continue;
     perFile.set(file.path, { file, stats: await statsForFile(app, file, now) });
+  }
+  el.empty();
+  for (const scope of missing) {
+    el.createDiv({ cls: "obsictionary-stats-empty", text: `No dictionary found for "${scope}".` });
+  }
+  if (perFile.size === 0) {
+    if (missing.length === 0) {
+      el.createDiv({ cls: "obsictionary-stats-empty", text: "No dictionary found for stats." });
+    }
+    return;
   }
   renderDictionaryTiles(
     app,
