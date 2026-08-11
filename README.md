@@ -19,6 +19,19 @@ In the view you can:
 
 Custom fields are just extra columns. Frontmatter keys (graph links like `up`/`source`, `related`, or your own) render in the header as one inline row of properties — wikilink/URL values become clickable links; pick which keys and their order in the plugin settings. Audio/image attachments referenced with `![[name]]` are resolved vault-wide
 
+## Contents
+
+- [A dictionary note](#a-dictionary-note)
+- [Not only words](#not-only-words)
+- [Reviewing](#reviewing)
+- [Stats](#stats)
+- [Dashboard and shelf](#dashboard-and-shelf)
+- [Reminders](#reminders)
+- [Creating dictionaries](#creating-dictionaries)
+- [Development](#development)
+- [Roadmap](#roadmap)
+- [License](#license)
+
 ## A dictionary note
 
 ```markdown
