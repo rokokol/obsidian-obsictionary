@@ -30,7 +30,6 @@ Custom fields are just extra columns. Frontmatter keys (graph links like `up`/`s
 - [Creating dictionaries](#creating-dictionaries)
 - [Development](#development)
 - [Roadmap](#roadmap)
-- [License](#license)
 
 ## A dictionary note
 
@@ -194,7 +193,3 @@ The build copies `main.js`, `manifest.json` and `styles.css` into the folder nam
 - [x] Notify-reminders
 - [ ] Inline hints in other files
 - [ ] Translate the plugin to multiple languages
-
-## License
-
-MIT
