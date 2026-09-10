@@ -4,14 +4,28 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  # Called by vendor-sync.yml against its temp branch, so new vendored copies are checked by
+  # this file rather than by a copy of its commands
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+        default: ""
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # check-pins.sh comes verbatim from the ci skill's templates/ and proves on every
-      # run that it catches each unpinned-lookup shape it claims
+        with:
+          ref: ${{ inputs.ref }}
+      # Every vendored copy is byte-equal to its source: one edited here instead of at the
+      # source fails by name — see .github/vendor.lock
+      - name: vendored copies are byte-equal to their source
+        run: ./vendor-sync.sh check
+      # check-pins.sh is vendored from the ci skill and proves on every run that it catches
+      # each unpinned-lookup shape it claims
       - name: CI tools come from the lock, not the registry
         run: ./check-pins.sh
       - uses: actions/setup-node@v6
